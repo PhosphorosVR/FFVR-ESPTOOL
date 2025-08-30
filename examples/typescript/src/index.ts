@@ -65,6 +65,17 @@ function dbg(msg: string, dir: 'tx'|'rx'|'info' = 'info') {
 
 const demoModeEl = document.getElementById("demoMode") as HTMLInputElement | null;
 
+function escapeHtml(s: any): string {
+  if (s == null) return '';
+  const str = String(s);
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function switchToConsoleTab() {
   const tabConsole = document.querySelector('#tabs .tab[data-target="console"]') as HTMLElement | null;
   if (tabConsole) {
@@ -104,12 +115,13 @@ async function sendJsonCommand(command: string, params?: any, timeoutMs = 15000)
   }
 
   const dec = new TextDecoder();
+  // no-op flags removed after simplifying scan logic
   let buffer = "";
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const loop = transport.rawRead();
     const { value, done } = await loop.next();
-    if (done) break;
+    if (done) { await new Promise(r => setTimeout(r, 10)); continue; }
     if (!value) continue;
     buffer += dec.decode(value, { stream: true });
     try {
@@ -123,7 +135,7 @@ async function sendJsonCommand(command: string, params?: any, timeoutMs = 15000)
     } catch {}
 
     // Special handling: scan_networks may emit a raw multi-line JSON {"networks":[...]}
-    if (command === 'scan_networks') {
+  if (command === 'scan_networks') {
       const m = buffer.match(/\{\s*"networks"\s*:\s*\[([\s\S]*?)\]\s*\}/);
       if (m && m[0]) {
         // Return in a format compatible with existing parser
@@ -131,29 +143,140 @@ async function sendJsonCommand(command: string, params?: any, timeoutMs = 15000)
       }
     }
 
-    const lines = buffer.split(/\r?\n/);
+  // Try to extract complete multi-line JSON objects from buffer (brace counting)
+    // This mirrors pytool.py behavior to catch pretty-printed responses.
+    let startIdx = buffer.indexOf('{');
+    while (startIdx !== -1) {
+      let brace = 0;
+      let endIdx = -1;
+      for (let i = startIdx; i < buffer.length; i++) {
+        const ch = buffer[i];
+        if (ch === '{') brace++;
+        else if (ch === '}') {
+          brace--;
+          if (brace === 0) { endIdx = i + 1; break; }
+        }
+      }
+      if (endIdx > startIdx) {
+        const jsonStr = buffer.slice(startIdx, endIdx).replace(/\r/g, '');
+        // Advance buffer past this JSON block regardless of parse success to avoid loops
+        buffer = buffer.slice(endIdx);
+        try {
+          const obj = JSON.parse(jsonStr);
+          if (obj && typeof obj === 'object') {
+            // Special handling inside brace-count path for scan_networks
+            if (command === 'scan_networks' && Array.isArray((obj as any).networks)) {
+              // Return in the same normalized format as the regex path
+              try { dbg(`Received scan networks (brace): ${JSON.stringify(obj).slice(0, 120)}...`, 'info'); } catch {}
+              return { results: [ JSON.stringify({ result: JSON.stringify(obj) }) ] };
+            }
+            if ('heartbeat' in obj) {
+              try { dbg(`Heartbeat: ${JSON.stringify(obj)}`, 'rx'); } catch {}
+              // Look for next JSON block
+              startIdx = buffer.indexOf('{');
+              continue;
+            }
+            if ('results' in obj) {
+              // For scan_networks: if results contains embedded networks JSON, extract; else just note completion and continue waiting
+              if (command === 'scan_networks') {
+                try {
+                  const arr: any[] = Array.isArray((obj as any).results) ? (obj as any).results : [];
+                  for (const entry of arr) {
+                    let msg: any = entry;
+                    if (typeof msg === 'string') {
+                      try { msg = JSON.parse(msg); } catch {}
+                    }
+                    let payload: any = (msg && typeof msg === 'object' && 'result' in msg) ? msg.result : msg;
+                    if (typeof payload === 'string' && payload.indexOf('"networks"') !== -1) {
+                      try { const parsed = JSON.parse(payload); if (Array.isArray(parsed.networks)) { return { results: [ JSON.stringify({ result: payload }) ] }; } } catch {}
+                    }
+                  }
+                  try { dbg('Scan completion reported; waiting for networks JSON...', 'info'); } catch {}
+                } catch {}
+                startIdx = buffer.indexOf('{');
+                continue;
+              }
+              try { dbg(`Received: ${JSON.stringify(obj)}`, 'info'); } catch {}
+              return obj;
+            }
+            try { dbg(`Ignoring JSON without results: ${JSON.stringify(obj)}`, 'rx'); } catch {}
+          }
+        } catch {
+          // Not a valid JSON block; continue scanning
+        }
+        // Continue scanning remaining buffer for further JSON blocks
+        startIdx = buffer.indexOf('{');
+      } else {
+        // No complete JSON yet; break and wait for more data
+        break;
+      }
+    }
+
+  const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
         const obj = JSON.parse(trimmed);
-  try { dbg(`Received: ${JSON.stringify(obj)}`, 'info'); } catch {}
-        return obj;
+        // Skip heartbeat/status frames; wait for actual command results like pytool.py
+        if (obj && typeof obj === 'object' && 'heartbeat' in obj) {
+          try { dbg(`Heartbeat: ${JSON.stringify(obj)}`, 'rx'); } catch {}
+          continue;
+        }
+        if (obj && typeof obj === 'object' && 'results' in obj) {
+          try { dbg(`Received: ${JSON.stringify(obj)}`, 'info'); } catch {}
+          return obj;
+        }
+        // If it's some other JSON (e.g., logs), ignore and continue waiting
+        try { dbg(`Ignoring JSON without results: ${JSON.stringify(obj)}`, 'rx'); } catch {}
+        continue;
       } catch {
         const startIdx = trimmed.indexOf("{");
         const endIdx = trimmed.lastIndexOf("}");
         if (startIdx !== -1 && endIdx > startIdx) {
             try {
               const obj = JSON.parse(trimmed.slice(startIdx, endIdx + 1));
-              try { dbg(`Received: ${JSON.stringify(obj)}`, 'info'); } catch {}
-              return obj;
+              if (obj && typeof obj === 'object' && 'heartbeat' in obj) {
+                try { dbg(`Heartbeat: ${JSON.stringify(obj)}`, 'rx'); } catch {}
+                continue;
+              }
+              if (obj && typeof obj === 'object' && 'results' in obj) {
+                if (command === 'scan_networks') {
+                  try {
+                    const arr: any[] = Array.isArray((obj as any).results) ? (obj as any).results : [];
+                    for (const entry of arr) {
+                      let msg: any = entry;
+                      if (typeof msg === 'string') { try { msg = JSON.parse(msg); } catch {} }
+                      let payload: any = (msg && typeof msg === 'object' && 'result' in msg) ? msg.result : msg;
+                      if (typeof payload === 'string' && payload.indexOf('"networks"') !== -1) {
+                        try { const parsed = JSON.parse(payload); if (Array.isArray(parsed.networks)) { return { results: [ JSON.stringify({ result: payload }) ] }; } } catch {}
+                      }
+                    }
+                    try { dbg('Scan completion reported; waiting for networks JSON...', 'info'); } catch {}
+                  } catch {}
+                  continue; // wait for networks JSON
+                }
+                try { dbg(`Received: ${JSON.stringify(obj)}`, 'info'); } catch {}
+                return obj;
+              }
+              try { dbg(`Ignoring JSON without results: ${JSON.stringify(obj)}`, 'rx'); } catch {}
+              continue;
             } catch {}
         }
       }
     }
+
+    // Additionally, detect inline networks JSON within a parsed line
+  if (command === 'scan_networks') {
+      const netMatch = buffer.match(/\{\s*"networks"\s*:\s*\[([\s\S]*?)\]\s*\}/);
+      if (netMatch && netMatch[0]) {
+        return { results: [ JSON.stringify({ result: netMatch[0] }) ] };
+      }
+    }
   }
-  throw new Error("Timeout waiting for response");
+  // Align with pytool.py: return a structured timeout error instead of throwing
+  return { error: "Command timeout" };
 }
 
 function parseNetworksFromResults(resp: any): Array<{ssid: string; rssi: number; channel: number; auth_mode: number; mac_address?: string}> {
@@ -189,23 +312,45 @@ async function wifiScanAndDisplay() {
   const statusEl = document.getElementById('wifiStatusMsg') as HTMLElement | null;
   try {
     statusEl && (statusEl.textContent = 'Scanning...');
-    await sendJsonCommand('pause', { pause: true }, 5000);
-    const scanResp = await sendJsonCommand('scan_networks', undefined, 30000);
+    const pauseResp = await sendJsonCommand('pause', { pause: true }, 5000);
+    try {
+      if (pauseResp && pauseResp.error === 'Command timeout') {
+        // Mirror pytool.py behavior: even on timeout, pause likely succeeded
+        dbg('Device pause command sent (startup logs may have obscured response)', 'info');
+      }
+    } catch {}
+    // Start scan immediately for lower latency
+    let scanResp = await sendJsonCommand('scan_networks', undefined, 45000);
+    try { dbg(`Scan response (raw): ${JSON.stringify(scanResp)}`, 'info'); } catch {}
     // Parse and normalize results
-    const raw = parseNetworksFromResults(scanResp) || [];
-    // 1) Drop hidden networks (no SSID)
-    // 2) Deduplicate by SSID, keeping the strongest RSSI
+    let raw = parseNetworksFromResults(scanResp) || [];
+    // If nothing came back, retry once with a longer wait
+    if (!Array.isArray(raw) || raw.length === 0) {
+      try { dbg('No networks in first pass; retrying scan once...', 'info'); } catch {}
+      await new Promise(r => setTimeout(r, 300));
+      scanResp = await sendJsonCommand('scan_networks', undefined, 60000);
+      try { dbg(`Scan response (retry raw): ${JSON.stringify(scanResp)}`, 'info'); } catch {}
+      raw = parseNetworksFromResults(scanResp) || [];
+    }
+    // Deduplicate by SSID: if name is equal, keep only the entry with the highest RSSI (strongest signal).
+    // Hidden networks (empty SSID) are grouped together as well and we keep the strongest one.
     const bestBySsid = new Map<string, {ssid: string; rssi: number; channel: number; auth_mode: number; mac_address?: string}>();
     for (const n of raw) {
-      const ssid = (n?.ssid || '').trim();
-      if (!ssid) continue; // skip hidden
-      const prev = bestBySsid.get(ssid);
+      const ssidName = (typeof n?.ssid === 'string') ? n.ssid : '';
+      const key = ssidName; // group by SSID regardless of BSSID/channel
+      const prev = bestBySsid.get(key);
       if (!prev || ((n?.rssi ?? -999) > (prev?.rssi ?? -999))) {
-        bestBySsid.set(ssid, n);
+        bestBySsid.set(key, n);
       }
     }
-    const nets = Array.from(bestBySsid.values());
+  // Exclude hidden SSIDs entirely (empty names)
+  const nets = Array.from(bestBySsid.values()).filter(n => typeof n.ssid === 'string' && n.ssid.length > 0);
     nets.sort((a, b) => (b.rssi || -999) - (a.rssi || -999));
+    try {
+      dbg(`Scan parsed: ${nets.length} networks`, 'info');
+  const names = nets.map(n => String(n.ssid));
+      dbg(`Scan SSIDs: ${JSON.stringify(names)}`, 'info');
+    } catch {}
   const tableEl = document.getElementById('wifiTable') as HTMLElement | null;
   const body = document.getElementById('wifiTableBody') as HTMLElement | null;
   const hintEl = document.getElementById('wifiHint') as HTMLElement | null;
@@ -226,10 +371,11 @@ async function wifiScanAndDisplay() {
       const open = (n.auth_mode === 0);
       const radioId = `wifiSel_${idx}`;
       const lockIcon = open ? '🔓' : '🔒';
-      const label = n.ssid; // hidden SSIDs were filtered out
+  const label = (typeof n.ssid === 'string' && n.ssid.length > 0) ? n.ssid : '<hidden>';
+      const labelEsc = escapeHtml(label);
       tr.innerHTML = `
         <td class="col-select"><input type="radio" name="wifiNet" id="${radioId}" /></td>
-        <td><label for="${radioId}" class="wifi-ssid">${lockIcon} ${label}</label></td>
+        <td><label for="${radioId}" class="wifi-ssid">${lockIcon} ${labelEsc}</label></td>
         <td>${n.rssi} dBm</td>
       `;
       // When the radio changes, show selection box and set password visibility
