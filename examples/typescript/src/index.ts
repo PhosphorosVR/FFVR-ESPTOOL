@@ -771,6 +771,11 @@ const espLoaderTerminal = {
 type FirmwareItem = { name?: string; file: string; address?: string; source?: 'binaries' | 'legacy' };
 let prebuiltItems: Array<FirmwareItem> = [];
 let legacyItems: Array<FirmwareItem> = [];
+// Optional manifest-driven grouping state. If non-null, `prebuiltGroups` contains
+// the group order and `groupIndexMap` maps group name -> list of prebuiltItems indices.
+let prebuiltGroups: string[] | null = null;
+const groupIndexMap: Map<string, number[]> = new Map();
+let legacyMerged = false; // tracks whether legacyItems have been appended into prebuiltItems
 async function fetchJson(url: string) {
   try {
     const res = await fetch(url, { cache: "no-store" });
@@ -797,24 +802,155 @@ function parseAddrFromName(filename: string): string | undefined {
   const m = filename.match(/^0x([0-9a-fA-F]+)[_-]/);
   return m ? `0x${m[1]}` : undefined;
 }
-async function loadPrebuiltManifest() {
+// Determine a human-friendly category for a given firmware filename/source
+function categorizeFirmwareItem(it: FirmwareItem, idx: number): string {
   try {
-    // 1) Preferred: plain file next to the built app
-    const json = await fetchJson("./binaries/manifest.json");
-    if (Array.isArray(json?.items)) {
-      prebuiltItems = json.items
-        .map((it: any) => {
-          if (typeof it === 'string') {
-            const file = it;
-            return { file, name: file, address: parseAddrFromName(file), source: 'binaries' } as FirmwareItem;
+    const file = String(it.file || '').toLowerCase();
+    const src = String(it.source || '').toLowerCase();
+    if (src === 'legacy' || file.startsWith('legacy/')) return 'Legacy';
+    if (file.indexOf('esp8266') !== -1) return 'ESP8266';
+    if (file.indexOf('esp32') !== -1 || /esp32s|esp32c|esp32p|esp32h/.test(file)) return 'ESP32 family';
+    if (file.indexOf('xiao') !== -1 || file.indexOf('seeed') !== -1) return 'XIAO / Seeed';
+    if (file.indexOf('ffvr') !== -1 || file.indexOf('ffv') !== -1) return 'FFVR';
+    // Fallback: group by any obvious chip name present in filename
+    if (file.indexOf('8266') !== -1) return 'ESP8266';
+    return 'Other';
+  } catch (_) { return 'Other'; }
+}
+
+// Render the prebuilt firmware select using optgroups while preserving original indices
+function renderPrebuiltSelect() {
+  if (!prebuiltSelect) return;
+  // preserve placeholder option at index 0; remove other child nodes (optgroups/options)
+  while (prebuiltSelect.children.length > 1) {
+    prebuiltSelect.removeChild(prebuiltSelect.lastChild as ChildNode);
+  }
+
+  // If manifest provided explicit groups, render according to that order/map
+  if (prebuiltGroups && prebuiltGroups.length) {
+    // Deduplicate group names to avoid duplicated optgroups (safety)
+    prebuiltGroups = prebuiltGroups.filter((v, i, a) => a.indexOf(v) === i);
+    for (const cat of prebuiltGroups) {
+      const indices = groupIndexMap.get(cat) || [];
+      if (!indices.length) continue;
+  const og = document.createElement('optgroup');
+  og.label = cat;
+      // Create options in the order provided by the manifest
+      indices.forEach((idx) => {
+        const it = prebuiltItems[idx];
+        if (!it) return;
+        const opt = document.createElement('option');
+        opt.value = String(idx);
+        const label = it.file || it.name || `item ${idx}`;
+        opt.textContent = label;
+        opt.title = it.source === 'legacy' ? `${label} (legacy)` : label;
+        og.appendChild(opt);
+      });
+      prebuiltSelect.appendChild(og);
+    }
+    // Also append any items that weren't assigned to a group (should be rare)
+    const assigned = new Set<number>();
+    for (const idxs of groupIndexMap.values()) idxs.forEach(i => assigned.add(i));
+    const leftover: number[] = [];
+    prebuiltItems.forEach((_, i) => { if (!assigned.has(i)) leftover.push(i); });
+    if (leftover.length) {
+  const og = document.createElement('optgroup');
+  og.label = 'Other';
+      leftover.sort((a, b) => String(prebuiltItems[a].file).localeCompare(String(prebuiltItems[b].file)));
+      leftover.forEach(idx => {
+        const it = prebuiltItems[idx];
+        const opt = document.createElement('option');
+        opt.value = String(idx);
+        const label = it.file || it.name || `item ${idx}`;
+        opt.textContent = label;
+        opt.title = it.source === 'legacy' ? `${label} (legacy)` : label;
+        og.appendChild(opt);
+      });
+      prebuiltSelect.appendChild(og);
+    }
+    return;
+  }
+
+  // Fallback: no manifest groups — use heuristic grouping as before
+  const groups = new Map<string, Array<{idx: number; it: FirmwareItem}>>();
+  prebuiltItems.forEach((it, idx) => {
+    const cat = categorizeFirmwareItem(it, idx);
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat)!.push({ idx, it });
+  });
+
+  // Preferred category order for readability
+  const preferred = ['ESP32 family', 'ESP8266', 'XIAO / Seeed', 'FFVR', 'Other', 'Legacy'];
+  const remaining = Array.from(groups.keys()).filter(k => preferred.indexOf(k) === -1).sort();
+  const finalOrder: string[] = [];
+  for (const p of preferred) if (groups.has(p)) finalOrder.push(p);
+  for (const r of remaining) if (!finalOrder.includes(r)) finalOrder.push(r);
+
+  for (const cat of finalOrder) {
+    const entries = groups.get(cat) || [];
+    if (!entries.length) continue;
+  const og = document.createElement('optgroup');
+  og.label = cat;
+    entries.sort((a, b) => String(a.it.file).localeCompare(String(b.it.file)));
+    entries.forEach(({ idx, it }) => {
+      const opt = document.createElement('option');
+      opt.value = String(idx);
+      const label = it.file || it.name || `item ${idx}`;
+      opt.textContent = label;
+      opt.title = it.source === 'legacy' ? `${label} (legacy)` : label;
+      og.appendChild(opt);
+    });
+    prebuiltSelect.appendChild(og);
+  }
+}
+  async function loadPrebuiltManifest() {
+  try {
+      // 1) Preferred: plain file next to the built app
+      const json = await fetchJson("./binaries/manifest.json");
+      // If manifest provides explicit groups -> use that shape
+      if (json && Array.isArray((json as any).groups)) {
+        prebuiltItems = [];
+        prebuiltGroups = [];
+        groupIndexMap.clear();
+        let globalIdx = 0;
+        for (const g of (json as any).groups) {
+          const gname = String(g.name || '');
+          if (!gname) continue;
+          prebuiltGroups.push(gname);
+          groupIndexMap.set(gname, []);
+          const its = Array.isArray(g.items) ? g.items : [];
+          for (const raw of its) {
+            let it: FirmwareItem | null = null;
+            if (typeof raw === 'string') {
+              it = { file: raw, name: raw, address: parseAddrFromName(raw), source: 'binaries' };
+            } else if (raw && (raw.file || raw.name)) {
+              const file = raw.file || (typeof raw.name === 'string' && raw.name.endsWith('.bin') ? raw.name : undefined);
+              if (!file) continue;
+              it = { file, name: raw.name, address: raw.address ?? parseAddrFromName(file), source: 'binaries' } as FirmwareItem;
+            }
+            if (it) {
+              prebuiltItems.push(it);
+              groupIndexMap.get(gname)!.push(globalIdx);
+              globalIdx++;
+            }
           }
-          const file = it?.file || (typeof it?.name === 'string' && it.name.endsWith('.bin') ? it.name : undefined);
-          if (!file) return null;
-          const address = it?.address ?? parseAddrFromName(file);
-          return { file, name: it?.name, address, source: 'binaries' } as FirmwareItem;
-        })
-        .filter(Boolean) as FirmwareItem[];
-    } else {
+        }
+      } else if (Array.isArray(json?.items)) {
+        prebuiltItems = json.items
+          .map((it: any) => {
+            if (typeof it === 'string') {
+              const file = it;
+              return { file, name: file, address: parseAddrFromName(file), source: 'binaries' } as FirmwareItem;
+            }
+            const file = it?.file || (typeof it?.name === 'string' && it.name.endsWith('.bin') ? it.name : undefined);
+            if (!file) return null;
+            const address = it?.address ?? parseAddrFromName(file);
+            return { file, name: it?.name, address, source: 'binaries' } as FirmwareItem;
+          })
+          .filter(Boolean) as FirmwareItem[];
+        prebuiltGroups = null;
+        groupIndexMap.clear();
+      } else {
       // 2) Fallback: try directory listing (works on some static servers)
       const html = await fetchText("./binaries/");
       if (html) {
@@ -844,34 +980,45 @@ async function loadPrebuiltManifest() {
     // Move any entries that were accidentally listed under binaries with a 'legacy/' prefix over to legacyItems
     try {
       const movedToLegacy: FirmwareItem[] = [];
-      prebuiltItems = prebuiltItems.filter((it) => {
+      // When manifest had groups, indices in groupIndexMap are based on the
+      // post-filtered prebuiltItems array we construct here; we need to adjust
+      // groups if we strip legacy-prefixed files.
+      const newPrebuilt: FirmwareItem[] = [];
+      const indexRemap: number[] = [];
+      for (let i = 0; i < prebuiltItems.length; i++) {
+        const it = prebuiltItems[i];
         if (typeof it.file === 'string' && it.file.startsWith('legacy/')) {
           const basename = it.file.replace(/^legacy\//, '');
           movedToLegacy.push({ ...it, file: basename, source: 'legacy' });
-          return false;
+        } else {
+          indexRemap.push(newPrebuilt.length);
+          newPrebuilt.push(it);
         }
-        return true;
-      });
+      }
+      // If groups existed, rebuild groupIndexMap using the remap
+      if (prebuiltGroups && prebuiltGroups.length) {
+        const newMap = new Map<string, number[]>();
+        for (const g of prebuiltGroups) {
+          const oldIdxs = groupIndexMap.get(g) || [];
+          const remapped: number[] = [];
+          for (const oldIdx of oldIdxs) {
+            // Only include indices that were kept
+            const kept = indexRemap[oldIdx];
+            if (kept !== undefined) remapped.push(kept);
+          }
+          newMap.set(g, remapped);
+        }
+        groupIndexMap.clear();
+        for (const [k, v] of newMap.entries()) groupIndexMap.set(k, v);
+      }
+      prebuiltItems = newPrebuilt;
       if (movedToLegacy.length) {
         legacyItems = [...movedToLegacy, ...legacyItems];
       }
     } catch {}
 
-    if (prebuiltSelect) {
-      // Clear existing options except placeholder
-      for (let i = prebuiltSelect.options.length - 1; i >= 1; i--) {
-        prebuiltSelect.remove(i);
-      }
-      prebuiltItems.forEach((it, idx) => {
-        const opt = document.createElement("option");
-        opt.value = String(idx);
-        // Always show the filename as label as requested
-        const label = it.file;
-        opt.textContent = label;
-        opt.title = it.source === 'legacy' ? `${label} (legacy)` : label; // show source on hover
-        prebuiltSelect.appendChild(opt);
-      });
-    }
+  // Render categorized select options
+  renderPrebuiltSelect();
   } catch (e) {
     console.warn("No prebuilt list or failed to load.", e);
   }
@@ -928,26 +1075,38 @@ const showLegacyEl = document.getElementById('showLegacy') as HTMLInputElement |
 if (showLegacyEl) {
   showLegacyEl.addEventListener('change', async () => {
     if (showLegacyEl.checked) {
-      if (!legacyItems.length) await loadLegacyManifest();
-      // Merge legacy at the bottom
-      const combined = [...prebuiltItems, ...legacyItems];
-      // Rebuild dropdown options using filenames
-      for (let i = prebuiltSelect.options.length - 1; i >= 1; i--) {
-        prebuiltSelect.remove(i);
+      // If the manifest already defines a non-empty 'Legacy' group, nothing to merge
+      if (prebuiltGroups && prebuiltGroups.includes('Legacy') && (groupIndexMap.get('Legacy')?.length ?? 0) > 0) {
+        legacyMerged = true;
+        renderPrebuiltSelect();
+        return;
       }
-      combined.forEach((it, idx) => {
-        const opt = document.createElement('option');
-        opt.value = String(idx);
-        opt.textContent = it.file;
-        opt.title = it.source === 'legacy' ? `${it.file} (legacy)` : it.file;
-        prebuiltSelect.appendChild(opt);
-      });
+
+      if (!legacyItems.length) await loadLegacyManifest();
+      // Merge legacy at the bottom. If manifest supplied explicit groups,
+      // append a 'Legacy' group instead of flattening to keep grouping clear.
+      if (!legacyMerged) {
+        if (prebuiltGroups && prebuiltGroups.length) {
+          const startIdx = prebuiltItems.length;
+          // Append legacy items to prebuiltItems so option indices remain valid
+          for (const it of legacyItems) prebuiltItems.push({ ...it, source: 'legacy' });
+          const legacyIdxs = legacyItems.map((_, i) => startIdx + i);
+          if (!prebuiltGroups.includes('Legacy')) prebuiltGroups.push('Legacy');
+          groupIndexMap.set('Legacy', legacyIdxs);
+        } else {
+          prebuiltItems = [...prebuiltItems, ...legacyItems];
+        }
+        legacyMerged = true;
+        renderPrebuiltSelect();
+      }
       // Keep a shadow copy that program uses based on index mapping
       // Overwrite prebuiltItems reference to combined for selection consistency
-      prebuiltItems = combined;
     } else {
-      // Revert to only prebuilt list
-      await loadPrebuiltManifest();
+      // Revert to only prebuilt list: if we merged legacy items, reload manifest to restore original indices
+      if (legacyMerged) {
+        await loadPrebuiltManifest();
+        legacyMerged = false;
+      }
     }
   });
   // If the checkbox is already enabled on load, populate immediately

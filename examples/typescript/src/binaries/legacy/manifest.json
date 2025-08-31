@@ -1,5 +1,5 @@
 {
-  "items": [
-    { "file": "FFVR_Face_1.bin", "address": "0x0" }
-  ]
+  "deprecated": true,
+  "reason": "Legacy entries have been merged into ../manifest.json (groups). Remove this file if you prefer; loader will fall back to directory listing when missing.",
+  "items": []
 }

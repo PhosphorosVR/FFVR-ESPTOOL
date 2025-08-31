@@ -1,5 +1,23 @@
 {
-  "items": [
-  { "file": "FFVR_Face.bin", "address": "0x0" }
+  "groups": [
+    {
+      "name": "FFVR",
+      "items": [
+        { "file": "FFVR Eyes [a.0.0.1].bin", "address": "0x0" },
+        { "file": "FFVR Face [a.0.0.1].bin", "address": "0x0" }
+      ]
+    },
+    {
+      "name": "XIAO / Seeed",
+      "items": [
+        { "file": "ESP32-S3 Sense [a0.0.1].bin", "address": "0x0" }
+      ]
+    },
+    {
+      "name": "Legacy",
+      "items": [
+        { "file": "legacy/Test.bin", "address": "0x0" }
+      ]
+    }
   ]
 }
