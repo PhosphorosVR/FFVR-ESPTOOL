@@ -436,7 +436,8 @@ details.advanced > summary:hover { opacity: 1; }
 }
 
 /* Debug panel styling (persistent under tabs) */
-#debugPanel { margin-top: 12px; }
+/* Match the top gap used above tabs (Connect -> Tabs) */
+#debugPanel { margin-top: 32px; }
 .debug-log {
   background: #0a0f18;
   border: 1px solid var(--border);

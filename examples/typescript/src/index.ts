@@ -47,7 +47,29 @@ function hideConnectAlert() {
 }
 
 const debugLogging = document.getElementById("debugLogging") as HTMLInputElement;
+const debugPanel = document.getElementById('debugPanel') as HTMLElement | null;
 const debugLogEl = document.getElementById('debugLog') as HTMLElement | null;
+// Show/hide debug panel based on checkbox; default is checked in HTML
+try {
+  const applyDebugVisibility = () => {
+    if (!debugPanel || !debugLogging) return;
+    debugPanel.style.display = debugLogging.checked ? '' : 'none';
+  };
+  debugLogging?.addEventListener('change', applyDebugVisibility);
+  applyDebugVisibility();
+} catch {}
+
+// If we just reloaded after flashing, show a reconnect message (green)
+try {
+  if (sessionStorage.getItem('flashReload')) {
+    sessionStorage.removeItem('flashReload');
+    if (connectAlert) {
+      connectAlert.classList.add('success');
+      connectAlert.style.marginBottom = '24px'; // more space below alert
+    }
+    showConnectAlert('Flashing successful');
+  }
+} catch {}
 function dbg(msg: string, dir: 'tx'|'rx'|'info' = 'info') {
   try {
     if (!debugLogEl) return;
@@ -115,163 +137,84 @@ async function sendJsonCommand(command: string, params?: any, timeoutMs = 15000)
   }
 
   const dec = new TextDecoder();
-  // no-op flags removed after simplifying scan logic
   let buffer = "";
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const loop = transport.rawRead();
     const { value, done } = await loop.next();
-    if (done) { await new Promise(r => setTimeout(r, 10)); continue; }
+    if (done) break; // don't delay; keep loop tight for low latency
     if (!value) continue;
-    buffer += dec.decode(value, { stream: true });
-    try {
-      if (buffer) {
-        // Raw chunks only when Debug is enabled
-        dbg(`Raw: ${JSON.stringify(buffer)}`, 'rx');
-        // Also mirror a short buffer tail when in debug for easier inspection
-        const tail = buffer.slice(-200);
-        if (tail && tail.length < buffer.length) dbg(`Buffer: ${JSON.stringify(tail)}`, 'rx');
-      }
-    } catch {}
+    // Normalize: strip ANSI, convert CR to LF to stabilize parsing
+    let chunk = dec.decode(value, { stream: true });
+    chunk = chunk.replace(/\x1b\[[0-9;]*m/g, "").replace(/\r/g, "\n");
+    buffer += chunk;
 
-    // Special handling: scan_networks may emit a raw multi-line JSON {"networks":[...]}
-  if (command === 'scan_networks') {
-      const m = buffer.match(/\{\s*"networks"\s*:\s*\[([\s\S]*?)\]\s*\}/);
+    // Fast path for WiFi: raw multi-line networks JSON anywhere in buffer
+    if (command === 'scan_networks') {
+      const re = /\{\s*"networks"\s*:\s*\[[\s\S]*?\]\s*\}/m;
+      const m = buffer.match(re);
       if (m && m[0]) {
-        // Return in a format compatible with existing parser
-        return { results: [ JSON.stringify({ result: m[0] }) ] };
+        const jsonStr = m[0];
+        try { JSON.parse(jsonStr); } catch { /* ignore invalid */ }
+        return { results: [ JSON.stringify({ result: jsonStr }) ] };
       }
     }
 
-  // Try to extract complete multi-line JSON objects from buffer (brace counting)
-    // This mirrors pytool.py behavior to catch pretty-printed responses.
-    let startIdx = buffer.indexOf('{');
-    while (startIdx !== -1) {
+    // Brace-count scan for complete JSON blocks; return immediately on results
+    let sIdx = buffer.indexOf('{');
+    while (sIdx !== -1) {
       let brace = 0;
-      let endIdx = -1;
-      for (let i = startIdx; i < buffer.length; i++) {
+      let eIdx = -1;
+      for (let i = sIdx; i < buffer.length; i++) {
         const ch = buffer[i];
         if (ch === '{') brace++;
         else if (ch === '}') {
           brace--;
-          if (brace === 0) { endIdx = i + 1; break; }
+          if (brace === 0) { eIdx = i + 1; break; }
         }
       }
-      if (endIdx > startIdx) {
-        const jsonStr = buffer.slice(startIdx, endIdx).replace(/\r/g, '');
-        // Advance buffer past this JSON block regardless of parse success to avoid loops
-        buffer = buffer.slice(endIdx);
+      if (eIdx > sIdx) {
+        const jsonStr = buffer.slice(sIdx, eIdx).trim();
+        buffer = buffer.slice(eIdx);
         try {
           const obj = JSON.parse(jsonStr);
-          if (obj && typeof obj === 'object') {
-            // Special handling inside brace-count path for scan_networks
-            if (command === 'scan_networks' && Array.isArray((obj as any).networks)) {
-              // Return in the same normalized format as the regex path
-              try { dbg(`Received scan networks (brace): ${JSON.stringify(obj).slice(0, 120)}...`, 'info'); } catch {}
-              return { results: [ JSON.stringify({ result: JSON.stringify(obj) }) ] };
-            }
-            if ('heartbeat' in obj) {
-              try { dbg(`Heartbeat: ${JSON.stringify(obj)}`, 'rx'); } catch {}
-              // Look for next JSON block
-              startIdx = buffer.indexOf('{');
-              continue;
-            }
-            if ('results' in obj) {
-              // For scan_networks: if results contains embedded networks JSON, extract; else just note completion and continue waiting
-              if (command === 'scan_networks') {
-                try {
-                  const arr: any[] = Array.isArray((obj as any).results) ? (obj as any).results : [];
-                  for (const entry of arr) {
-                    let msg: any = entry;
-                    if (typeof msg === 'string') {
-                      try { msg = JSON.parse(msg); } catch {}
-                    }
-                    let payload: any = (msg && typeof msg === 'object' && 'result' in msg) ? msg.result : msg;
-                    if (typeof payload === 'string' && payload.indexOf('"networks"') !== -1) {
-                      try { const parsed = JSON.parse(payload); if (Array.isArray(parsed.networks)) { return { results: [ JSON.stringify({ result: payload }) ] }; } } catch {}
-                    }
-                  }
-                  try { dbg('Scan completion reported; waiting for networks JSON...', 'info'); } catch {}
-                } catch {}
-                startIdx = buffer.indexOf('{');
-                continue;
+          if (command === 'scan_networks') {
+            // Find networks array nested anywhere
+            const findNetworks = (o: any): any[] | null => {
+              if (!o) return null;
+              if (Array.isArray(o.networks)) return o.networks;
+              if (o.result !== undefined) {
+                let p: any = o.result;
+                if (typeof p === 'string') { try { p = JSON.parse(p); } catch {} }
+                const nn = findNetworks(p); if (nn) return nn;
               }
+              if (Array.isArray(o.results)) {
+                for (let e of o.results) {
+                  if (typeof e === 'string') { try { e = JSON.parse(e); } catch {} }
+                  const nn = findNetworks(e); if (nn) return nn;
+                }
+              }
+              return null;
+            };
+            const nets = findNetworks(obj);
+            if (nets && nets.length >= 0) {
+              // Return normalized shape parsed by parseNetworksFromResults
+              return { networks: nets };
+            }
+          }
+          if (obj && (Object.prototype.hasOwnProperty.call(obj, 'results') || Object.prototype.hasOwnProperty.call(obj, 'error'))) {
+            // For non-scan commands, log and return immediately (restores visible pause ack)
+            if (command !== 'scan_networks') {
               try { dbg(`Received: ${JSON.stringify(obj)}`, 'info'); } catch {}
               return obj;
             }
-            try { dbg(`Ignoring JSON without results: ${JSON.stringify(obj)}`, 'rx'); } catch {}
+            // For scan_networks, avoid returning generic completion; wait for networks
           }
-        } catch {
-          // Not a valid JSON block; continue scanning
-        }
-        // Continue scanning remaining buffer for further JSON blocks
-        startIdx = buffer.indexOf('{');
-      } else {
-        // No complete JSON yet; break and wait for more data
-        break;
-      }
-    }
-
-  const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const obj = JSON.parse(trimmed);
-        // Skip heartbeat/status frames; wait for actual command results like pytool.py
-        if (obj && typeof obj === 'object' && 'heartbeat' in obj) {
-          try { dbg(`Heartbeat: ${JSON.stringify(obj)}`, 'rx'); } catch {}
-          continue;
-        }
-        if (obj && typeof obj === 'object' && 'results' in obj) {
-          try { dbg(`Received: ${JSON.stringify(obj)}`, 'info'); } catch {}
-          return obj;
-        }
-        // If it's some other JSON (e.g., logs), ignore and continue waiting
-        try { dbg(`Ignoring JSON without results: ${JSON.stringify(obj)}`, 'rx'); } catch {}
+        } catch { /* ignore parse errors and continue */ }
+        sIdx = buffer.indexOf('{');
         continue;
-      } catch {
-        const startIdx = trimmed.indexOf("{");
-        const endIdx = trimmed.lastIndexOf("}");
-        if (startIdx !== -1 && endIdx > startIdx) {
-            try {
-              const obj = JSON.parse(trimmed.slice(startIdx, endIdx + 1));
-              if (obj && typeof obj === 'object' && 'heartbeat' in obj) {
-                try { dbg(`Heartbeat: ${JSON.stringify(obj)}`, 'rx'); } catch {}
-                continue;
-              }
-              if (obj && typeof obj === 'object' && 'results' in obj) {
-                if (command === 'scan_networks') {
-                  try {
-                    const arr: any[] = Array.isArray((obj as any).results) ? (obj as any).results : [];
-                    for (const entry of arr) {
-                      let msg: any = entry;
-                      if (typeof msg === 'string') { try { msg = JSON.parse(msg); } catch {} }
-                      let payload: any = (msg && typeof msg === 'object' && 'result' in msg) ? msg.result : msg;
-                      if (typeof payload === 'string' && payload.indexOf('"networks"') !== -1) {
-                        try { const parsed = JSON.parse(payload); if (Array.isArray(parsed.networks)) { return { results: [ JSON.stringify({ result: payload }) ] }; } } catch {}
-                      }
-                    }
-                    try { dbg('Scan completion reported; waiting for networks JSON...', 'info'); } catch {}
-                  } catch {}
-                  continue; // wait for networks JSON
-                }
-                try { dbg(`Received: ${JSON.stringify(obj)}`, 'info'); } catch {}
-                return obj;
-              }
-              try { dbg(`Ignoring JSON without results: ${JSON.stringify(obj)}`, 'rx'); } catch {}
-              continue;
-            } catch {}
-        }
-      }
-    }
-
-    // Additionally, detect inline networks JSON within a parsed line
-  if (command === 'scan_networks') {
-      const netMatch = buffer.match(/\{\s*"networks"\s*:\s*\[([\s\S]*?)\]\s*\}/);
-      if (netMatch && netMatch[0]) {
-        return { results: [ JSON.stringify({ result: netMatch[0] }) ] };
+      } else {
+        break;
       }
     }
   }
@@ -320,7 +263,7 @@ async function wifiScanAndDisplay() {
       }
     } catch {}
     // Start scan immediately for lower latency
-    let scanResp = await sendJsonCommand('scan_networks', undefined, 45000);
+    let scanResp = await sendJsonCommand('scan_networks', undefined, 60000);
     try { dbg(`Scan response (raw): ${JSON.stringify(scanResp)}`, 'info'); } catch {}
     // Parse and normalize results
     let raw = parseNetworksFromResults(scanResp) || [];
@@ -400,10 +343,25 @@ async function wifiScanAndDisplay() {
   }
 }
 
+// Helper: animate a status element with trailing dots and return a stop function
+function startStatusAnimation(statusEl: HTMLElement | null, baseText: string) {
+  if (!statusEl) return () => {};
+  let dots = 0;
+  const maxDots = 5;
+  statusEl.textContent = baseText;
+  const timer = setInterval(() => {
+    dots = (dots + 1) % (maxDots + 1);
+    try { statusEl.textContent = baseText + '.'.repeat(dots); } catch {}
+  }, 300);
+  return () => { try { clearInterval(timer); } catch {} };
+}
+
 async function wifiConnectSelected() {
   const statusEl = document.getElementById('wifiStatusMsg') as HTMLElement | null;
   const ssidLabel = document.getElementById('wifiSelectedSsidLabel') as HTMLElement | null;
   const pwdEl = document.getElementById('wifiPassword') as HTMLInputElement | null;
+  const selBox = document.getElementById('wifiSelectionBox') as HTMLElement | null;
+  const pwdField = document.getElementById('wifiPwdField') as HTMLElement | null;
   const ssid = (ssidLabel as any)?._ssid?.trim();
   const authMode = (ssidLabel as any)?._auth_mode ?? 1;
   if (!ssid) { statusEl && (statusEl.textContent = 'Please select a network first'); return; }
@@ -411,29 +369,60 @@ async function wifiConnectSelected() {
   const password = open ? '' : (pwdEl?.value || '');
 
   try {
-    statusEl && (statusEl.textContent = 'Applying WiFi settings...');
-    const setResp = await sendJsonCommand('set_wifi', { name: 'main', ssid, password, channel: 0, power: 0 }, 15000);
-    if (setResp.error) throw new Error(setResp.error);
-    statusEl && (statusEl.textContent = 'Connecting...');
-    await sendJsonCommand('connect_wifi', {}, 10000);
-    const start = Date.now();
-    let ip: string | null = null;
-    while (Date.now() - start < 30000) {
-      const st = await sendJsonCommand('get_wifi_status', {}, 5000);
-      const arr = st.results || [];
-      if (arr.length) {
-        try {
-          const inner = JSON.parse(arr[0]);
-          let payload: any = inner.result;
-          if (typeof payload === 'string') payload = JSON.parse(payload);
-          const cand = payload?.ip_address;
-          if (cand && cand !== '0.0.0.0') { ip = cand; break; }
-        } catch {}
-      }
-      await new Promise(r => setTimeout(r, 500));
+    // Hide the selection/password row immediately after Connect is requested
+    try {
+      if (selBox) selBox.style.display = 'none';
+      if (pwdField) pwdField.style.display = 'none';
+    } catch {}
+    // Animate 'Applying' while waiting for set_wifi
+    const stopApplyAnim = startStatusAnimation(statusEl, 'Applying WiFi settings');
+    let setResp: any;
+    try {
+      setResp = await sendJsonCommand('set_wifi', { name: 'main', ssid, password, channel: 0, power: 0 }, 15000);
+    } finally {
+      try { stopApplyAnim(); } catch {}
     }
-    statusEl && (statusEl.textContent = ip ? `Connected: ${ip}` : 'Connection not confirmed');
+    if (setResp?.error) throw new Error(setResp.error);
+
+    // Animate 'Connecting' while performing connect and polling for IP
+    const stopConnectAnim = startStatusAnimation(statusEl, 'Connecting');
+    try {
+      await sendJsonCommand('connect_wifi', {}, 10000);
+      const start = Date.now();
+      let ip: string | null = null;
+      while (Date.now() - start < 30000) {
+        const st = await sendJsonCommand('get_wifi_status', {}, 5000);
+        const arr = st.results || [];
+        if (arr.length) {
+          try {
+            const inner = JSON.parse(arr[0]);
+            let payload: any = inner.result;
+            if (typeof payload === 'string') payload = JSON.parse(payload);
+            // If device explicitly reports an error (e.g. wrong password), stop and allow retry
+            if (payload && payload.status === 'error') {
+              try {
+                if (selBox) selBox.style.display = 'flex';
+                if (pwdField) pwdField.style.display = open ? 'none' : 'inline-block';
+              } catch {}
+              statusEl && (statusEl.textContent = 'Connection not confirmed - you probably entered the wrong password');
+              return;
+            }
+            const cand = payload?.ip_address;
+            if (cand && cand !== '0.0.0.0') { ip = cand; break; }
+          } catch {}
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
+      statusEl && (statusEl.textContent = ip ? `Connected: ${ip}` : 'Connection not confirmed');
+    } finally {
+      try { stopConnectAnim(); } catch {}
+    }
   } catch (e) {
+    // Restore selection/password UI so the user can retry
+    try {
+      if (selBox) selBox.style.display = 'flex';
+      if (pwdField) pwdField.style.display = open ? 'none' : 'inline-block';
+    } catch {}
     statusEl && (statusEl.textContent = `Error: ${e.message || e}`);
   }
 }
@@ -530,6 +519,13 @@ const term = new Terminal({ cols: 120, rows: 39, convertEol: true, scrollback: 5
 // @ts-ignore
 ;(window as any).term = term;
 term.open(terminal);
+// Label button more clearly (set value for <input> and textContent for <button> fallback)
+try {
+  if (consoleStartButton) {
+    try { (consoleStartButton as any).value = 'Start Monitoring'; } catch {}
+    try { (consoleStartButton as any).textContent = 'Start Monitoring'; } catch {}
+  }
+} catch {}
 // Helper to get xterm's scrollable viewport element
 function getTerminalViewport(): HTMLElement | null {
   try {
@@ -554,12 +550,19 @@ try {
   const consoleSection = document.getElementById('console');
   if (consoleSection) {
     const mo = new MutationObserver(() => {
+      // If console is shown, resize and prepare scrolling; if hidden, stop console monitoring
       if ((consoleSection as HTMLElement).style.display !== 'none') {
         setTimeout(() => {
           adjustTerminalSize();
           // Initialize autoScroll based on current position; scroll only if already at bottom
           try { autoScroll = isAtBottom(); if (autoScroll) term.scrollToBottom(); } catch {}
         }, 50);
+      } else {
+        // Stop the console loop when the console tab is hidden
+        try {
+          // Trigger the same stop logic as the stop button
+          (consoleStopButton as any)?.onclick?.();
+        } catch {}
       }
     });
     mo.observe(consoleSection, { attributes: true, attributeFilter: ['style'] });
@@ -1146,9 +1149,33 @@ const wifiScanButton = document.getElementById('wifiScanButton') as HTMLButtonEl
 const wifiConnectButton = document.getElementById('wifiConnectButton') as HTMLButtonElement | null;
 if (wifiScanButton) {
   wifiScanButton.onclick = async () => {
-  // Ensure a clean, connected transport (handles disconnected-but-present cases)
-  await ensureTransportConnected();
+    // Tabelle und Status zurücksetzen
+    const body = document.getElementById('wifiTableBody') as HTMLElement | null;
+    const tableEl = document.getElementById('wifiTable') as HTMLElement | null;
+    const hintEl = document.getElementById('wifiHint') as HTMLElement | null;
+    const statusEl = document.getElementById('wifiStatusMsg') as HTMLElement | null;
+    if (body) body.innerHTML = '';
+    if (tableEl) tableEl.style.display = 'none';
+    if (hintEl) hintEl.style.display = 'none';
+    // Animiertes 'Scanning...'
+    let dots = 0;
+    const maxDots = 5;
+    let scanActive = true;
+    if (statusEl) statusEl.textContent = 'Scanning';
+    const anim = setInterval(() => {
+      if (!scanActive) return;
+      dots = (dots + 1) % (maxDots + 1);
+      let txt = 'Scanning';
+      txt += '.'.repeat(dots);
+      if (statusEl) statusEl.textContent = txt;
+      if (dots === maxDots) dots = 0;
+    }, 300);
+    // Ensure a clean, connected transport (handles disconnected-but-present cases)
+    await ensureTransportConnected();
     await wifiScanAndDisplay();
+    // Animation stoppen, sobald Scan fertig
+    scanActive = false;
+    clearInterval(anim);
   };
 }
 if (wifiConnectButton) {
@@ -1292,7 +1319,7 @@ programButton.onclick = async () => {
     await esploader.after();
     // Success UI: show a green success alert and write to console
     try {
-      alertMsg.textContent = 'Flashing successful.';
+      alertMsg.textContent = 'Flashing successful. Please reconnect.';
       alertDiv.classList.add('success');
       alertDiv.style.display = 'block';
       // Auto-hide after 5 seconds
@@ -1303,6 +1330,14 @@ programButton.onclick = async () => {
       }, 5000);
     } catch {}
     try { term.writeln('\r\n[Flashing successful]'); } catch {}
+    // Reload the page once after a brief delay so the user reconnects
+    try {
+      setTimeout(() => {
+        try { dbg('Reloading page after flashing success', 'info'); } catch {}
+        try { sessionStorage.setItem('flashReload', '1'); } catch {}
+        window.location.reload();
+      }, 1500);
+    } catch {}
   } catch (e) {
     console.error(e);
     term.writeln(`Error: ${e.message}`);
