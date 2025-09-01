@@ -1,5 +1,5 @@
 {
-  "name": "esptool-js",
+  "name": "ffvr-esptool",
   "version": "0.5.7",
   "module": "lib/index.js",
   "main": "lib/index.js",
@@ -7,7 +7,7 @@
   "license": "Apache-2.0",
   "files": [
     "lib",
-    "bundle.js"
+  "dist/bundle.js"
   ],
   "scripts": {
     "build": "npm run clean && tsc && rollup --config",
@@ -22,10 +22,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/espressif/esptool-js.git"
+    "url": "git+https://github.com/PhosphorosVR/FFVR-ESPTOOL.git"
   },
   "bugs": {
-    "url": "https://github.com/espressif/esptool-js/issues"
+    "url": "https://github.com/PhosphorosVR/FFVR-ESPTOOL/issues"
   },
   "dependencies": {
     "atob-lite": "^2.0.0",

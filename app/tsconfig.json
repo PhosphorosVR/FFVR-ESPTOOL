@@ -5,6 +5,11 @@
     "declaration": false,
     "allowSyntheticDefaultImports": true,
     "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "ffvr-esptool/*": ["../lib/*"],
+      "ffvr-esptool": ["../lib/index.js"]
+    },
     "noUnusedLocals": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,

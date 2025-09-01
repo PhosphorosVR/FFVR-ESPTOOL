@@ -1,0 +1,160 @@
+/* FFVR web app UI styles */
+
+:root {
+  --bg: #0b0f14;
+  --panel: #121821;
+  --elev: #182130;
+  --text: #e6ecf2;
+  --muted: #a9b4c0;
+  --primary: #4f8cff;
+  --primary-600: #3c79ea;
+  --warn: #ffb347;
+  --danger: #ff6b6b;
+  --ok: #2fd180;
+  --border: #233043;
+  --accent: #22d3ee;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  background: radial-gradient(1200px 700px at 20% -10%, #12223a 0%, transparent 60%),
+              radial-gradient(1200px 700px at 120% 10%, #101b2c 0%, transparent 60%),
+              var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+.card { background: linear-gradient(180deg, var(--panel), #0f1520); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+.tabs + .card, .tabs + section.card { border-top-left-radius: 0; border-top-right-radius: 0; }
+.card-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.card-title { margin: 0; font-size: 16px; }
+.card-body { padding: 16px; }
+
+.status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 8px; vertical-align: middle; box-shadow: 0 0 0 2px rgba(0,0,0,0.15) inset; }
+.status-red { background: #d34b4b; box-shadow: 0 0 6px 0 #d34b4b88; }
+.status-green { background: #2fd180; box-shadow: 0 0 6px 0 #2fd18088; }
+
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.field { display: flex; align-items: center; gap: 8px; }
+
+select, input[type="text"], input[type="number"], input[type="password"] { background: #0e1523; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; min-width: 120px; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border); background: #152033; color: var(--text); cursor: pointer; transition: transform .04s ease, filter .2s ease; }
+.btn:hover { filter: brightness(1.06); }
+.btn:active { transform: translateY(1px); }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+.btn-primary { background: linear-gradient(180deg, var(--primary), var(--primary-600)); border-color: #2a5cc0; }
+.btn-secondary { background: #1b2536; }
+.btn-danger { background: linear-gradient(180deg, #ff7a7a, #e05555); border-color: #932b2b; }
+.btn-warning { background: linear-gradient(180deg, #ffc76a, #f0a93e); border-color: #946b1d; color: #1a1205; }
+
+.alert { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); border-left: 3px solid rgba(255, 107, 107, 0.6); color: var(--muted); padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+.alert.success { border-left-color: rgba(47, 209, 128, 0.7); color: #cfeedd; }
+.alert .close { float: right; cursor: pointer; opacity: .7; font-size: 14px; line-height: 1; margin-left: 8px; }
+
+/* Advanced (details): modern, clean look (no box); comfortable spacing */
+details.advanced > summary { font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+details.advanced { border: 0; border-radius: 0; padding: 0; background: transparent; }
+details.advanced .advanced-body { background: rgba(255,255,255,0.03); border-radius: 10px; padding: 12px; }
+details.advanced .advanced-body .row { gap: 16px; }
+details.advanced.flash-adv { margin-top: 12px; }
+/* Soft divider for advanced content */
+details.advanced.flash-adv .advanced-body { border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 12px; }
+/* Advanced groups: clearly separated sections */
+.adv-group { padding: 12px 0 2px; }
+.adv-group + .adv-group { margin-top: 20px; border-top: 1px dashed rgba(255,255,255,0.06); padding-top: 18px; }
+/* Subtle table look within advanced */
+#fileTable thead { background: #0e1624; }
+#fileTable th, #fileTable td { padding: 8px 10px; }
+/* Advanced: small buttons and captions */
+.btn-sm { height: 30px; padding: 0 12px; font-size: 13px; }
+.section-caption { font-size: 12px; color: var(--muted); letter-spacing: .02em; text-transform: uppercase; }
+.small { font-size: 12px; color: var(--muted); }
+.empty-hint { color: var(--muted); font-size: 13px; margin-top: 12px; display: block; }
+/* Flashing table: show when rows exist */
+#fileTable.has-rows { display: table !important; }
+
+/* table */
+table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 10px; }
+thead { background: #111a29; }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+
+/* wifi */
+.wifi-table th.col-select { width: 80px; text-align: center; }
+.wifi-table td.col-select { text-align: center; }
+.wifi-table .wifi-ssid { cursor: pointer; }
+.wifi-table tr.active { outline: 2px solid rgba(34, 211, 238, 0.35); outline-offset: -2px; }
+.wifi-table input[type="radio"] { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* Terminal */
+.terminal-wrapper { position: relative; border: 1px solid var(--border); border-radius: 10px; background: #0a0f18; overflow: hidden; }
+#terminal { height: auto; -webkit-user-select: text; -moz-user-select: text; user-select: text; }
+.terminal-wrapper.fullscreen { position: fixed; inset: clamp(8px, 2vw, 24px); z-index: 9999; border-radius: 12px; display: flex; flex-direction: column; background: #05080e; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+.terminal-wrapper.fullscreen #terminal { flex: 1 1 auto; height: auto; min-height: 0; }
+.terminal-bar { display: none; }
+.terminal-wrapper.fullscreen .terminal-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: #0b1322; border-bottom: 1px solid var(--border); }
+.terminal-controls { align-items: center; }
+.mt-20 { margin-top: 20px; }
+/* Expand button hidden until monitoring starts */
+#terminalExpandBtn { display: none; }
+/* Spacing utilities used across the app */
+.mt-4 { margin-top: 4px; }
+.mt-8 { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+.mt-32 { margin-top: 32px; }
+.mb-4 { margin-bottom: 4px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
+.mb-16 { margin-bottom: 16px; }
+.mb-24 { margin-bottom: 24px; }
+.mb-32 { margin-bottom: 32px; }
+
+/* Main tabs */
+.tabs { display: flex; gap: 10px; list-style: none; padding: 0; margin: 0 0 -1px 0; border-bottom: none; }
+.connect-actions { margin-bottom: 8px; }
+/* Space between connect card and tabs */
+.tabs { margin-top: 32px; }
+.tab { padding: 10px 14px; border: 1px solid transparent; border-top-left-radius: 10px; border-top-right-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }
+.tab.active { border-color: var(--border); border-bottom-color: transparent; background: linear-gradient(180deg, var(--panel), #0f1520); color: var(--text); position: relative; z-index: 2; }
+.tab.disabled { opacity: .5; pointer-events: none; }
+
+/* Hide redundant titles inside tab pages */
+#program .card-header, #console .card-header, #tools .card-header, #update .card-header { display: none; }
+
+/* Content visually connects with active tab */
+.tabs + .card, .tabs + section.card { position: relative; z-index: 1; }
+
+/* Tools subtabs (bubbles) */
+.subtabs { display: flex; gap: 8px; list-style: none; padding: 0; margin: 0 0 6px 0; flex-wrap: wrap; }
+.subtab { padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); cursor: pointer; background: #0f1520; font-size: 13px; }
+.subtab.active { background: var(--primary); border-color: #2a5cc0; color: #0b0f14; font-weight: 600; }
+/* Separator and consistent spacing between bubbles and content */
+.tool-panels { border-top: 1px solid rgba(255,255,255,0.06); margin-top: 6px; padding-top: 8px; }
+
+#debugPanel { margin-top: 32px; }
+.debug-log { background: #0a0f18; border: 1px solid var(--border); border-radius: 10px; padding: 10px; max-height: 220px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: #cfe1ff; white-space: pre-wrap; }
+
+/* Tools panels */
+.tool-panels { background: transparent; }
+.tool-panel { padding: 8px 0; }
+.tool-panel .row { margin-top: 8px; }
+/* Reduce top offset for first row (e.g., WiFi Scan button) */
+.tool-panel .row:first-child { margin-top: 0; }
+
+/* WiFi: subtle hint/status text */
+#wifiHint .muted, #wifiStatusMsg { font-size: 12px; color: var(--muted); opacity: 0.9; }
+/* WiFi: more spacing between "Selected" and password */
+#wifiSelectionBox { gap: 24px !important; margin-top: 20px; }
+#wifiPwdField { margin-left: 36px; }
+/* WiFi: more space above the table for readability */
+#wifiTable { margin-top: 20px; }

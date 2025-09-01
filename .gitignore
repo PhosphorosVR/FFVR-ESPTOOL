@@ -1,6 +1,6 @@
 node_modules
 lib
-bundle.js
+dist
 docs
 esptool-js-*.tgz
 .vscode/settings.json

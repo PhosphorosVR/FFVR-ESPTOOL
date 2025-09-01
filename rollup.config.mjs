@@ -12,7 +12,7 @@ const config = {
   input: 'lib/index.js',
   output: {
     name: "esptooljs",
-    file: 'bundle.js',
+    file: 'dist/bundle.js',
     format: 'es',
     inlineDynamicImports: true
   },
