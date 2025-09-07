@@ -21,7 +21,12 @@ export type WifiStatus = {
   message?: string;
 };
 
-export type DeviceMode = 'wifi' | 'uvc' | 'auto' | 'unknown';
+export type DeviceMode = 'wifi' | 'uvc' | 'setup' | 'unknown';
+export type SerialInfo = { serial?: string | null; mac?: string | null };
+export type WhoAmIInfo = { who_am_i?: string | null; version?: string | null };
+
+export type LedDuty = number | null; // percentage 0-100
+export type LedCurrent = number | null; // mA
 
 // Single entry-point to send a JSON command over the current transport
 export async function sendCommand(
@@ -111,10 +116,48 @@ function extractNestedPayload(resp: any): any | null {
   } catch { return null; }
 }
 
+export function extractLedDuty(resp: any): LedDuty {
+  const p = extractNestedPayload(resp) as any;
+  if (p && typeof p === 'object') {
+    if (typeof (p as any).led_external_pwm_duty_cycle === 'number') return (p as any).led_external_pwm_duty_cycle;
+    if (typeof (p as any).duty === 'number') return (p as any).duty;
+  }
+  return null;
+}
+
+export function extractLedCurrent(resp: any): LedCurrent {
+  const p = extractNestedPayload(resp) as any;
+  if (p && typeof p === 'object') {
+    if (typeof (p as any).led_current_ma === 'number') return (p as any).led_current_ma;
+    if (typeof (p as any).current === 'number') return (p as any).current;
+  }
+  return null;
+}
+
+export function extractSerialInfo(resp: any): SerialInfo {
+  const p = extractNestedPayload(resp) as any;
+  const out: SerialInfo = {};
+  if (p && typeof p === 'object') {
+    if (typeof (p as any).serial === 'string') out.serial = (p as any).serial;
+    if (typeof (p as any).mac === 'string') out.mac = (p as any).mac;
+  }
+  return out;
+}
+
+export function extractWhoAmI(resp: any): WhoAmIInfo {
+  const p = extractNestedPayload(resp) as any;
+  const out: WhoAmIInfo = {};
+  if (p && typeof p === 'object') {
+    if (typeof (p as any).who_am_i === 'string') out.who_am_i = (p as any).who_am_i;
+    if (typeof (p as any).version === 'string') out.version = (p as any).version;
+  }
+  return out;
+}
+
 export function extractDeviceMode(resp: any): DeviceMode {
   const payload = extractNestedPayload(resp) as any;
   const mode = (payload && typeof payload === 'object' && (payload as any).mode) ? String((payload as any).mode).toLowerCase() : 'unknown';
-  if (mode === 'wifi' || mode === 'uvc' || mode === 'auto') return mode;
+  if (mode === 'wifi' || mode === 'uvc' || mode === 'setup') return mode as DeviceMode;
   return 'unknown';
 }
 
@@ -148,7 +191,7 @@ export async function sendAndExtract(
 export async function sendAndExtract(
   transport: Transport,
   command: 'switch_mode',
-  params: { mode: 'wifi' | 'uvc' | 'auto' },
+  params: { mode: 'wifi' | 'uvc' | 'setup' },
   timeoutMs?: number
 ): Promise<boolean>;
 export async function sendAndExtract(
@@ -161,6 +204,48 @@ export async function sendAndExtract(
   transport: Transport,
   command: 'set_mdns',
   params: { hostname: string },
+  timeoutMs?: number
+): Promise<boolean>;
+export async function sendAndExtract(
+  transport: Transport,
+  command: 'get_led_duty_cycle',
+  params?: undefined,
+  timeoutMs?: number
+): Promise<LedDuty>;
+export async function sendAndExtract(
+  transport: Transport,
+  command: 'get_led_current',
+  params?: undefined,
+  timeoutMs?: number
+): Promise<LedCurrent>;
+export async function sendAndExtract(
+  transport: Transport,
+  command: 'set_led_duty_cycle',
+  params: { dutyCycle: number },
+  timeoutMs?: number
+): Promise<boolean>;
+export async function sendAndExtract(
+  transport: Transport,
+  command: 'get_serial',
+  params?: undefined,
+  timeoutMs?: number
+): Promise<SerialInfo>;
+export async function sendAndExtract(
+  transport: Transport,
+  command: 'get_who_am_i',
+  params?: undefined,
+  timeoutMs?: number
+): Promise<WhoAmIInfo>;
+export async function sendAndExtract(
+  transport: Transport,
+  command: 'start_streaming',
+  params?: undefined,
+  timeoutMs?: number
+): Promise<boolean>;
+export async function sendAndExtract(
+  transport: Transport,
+  command: 'pause',
+  params: { pause: boolean },
   timeoutMs?: number
 ): Promise<boolean>;
 export async function sendAndExtract(
@@ -186,6 +271,13 @@ export async function sendAndExtract(
   if (command === 'switch_mode') return !resp?.error;
   if (command === 'get_mdns_name') return extractMdnsName(resp);
   if (command === 'set_mdns') return !resp?.error;
+  if (command === 'get_led_duty_cycle') return extractLedDuty(resp);
+  if (command === 'get_led_current') return extractLedCurrent(resp);
+  if (command === 'set_led_duty_cycle') return !resp?.error;
+  if (command === 'get_serial') return extractSerialInfo(resp);
+  if (command === 'get_who_am_i') return extractWhoAmI(resp);
+  if (command === 'start_streaming') return !resp?.error;
+  if (command === 'pause') return !resp?.error;
   
   if (command === 'get_wifi_status') return extractWifiStatus(resp);
   return resp;
