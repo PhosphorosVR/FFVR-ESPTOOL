@@ -1,2 +1,15 @@
-node_modules
-lib
+# Scope ESLint to app/src only
+*
+!app
+!app/src
+!app/src/**
+
+# Ignore declaration files in app/src
+app/src/**/*.d.ts
+
+# Ignore build and distribution outputs
+lib/
+dist/
+bundle.js
+.parcel-cache/
+node_modules/

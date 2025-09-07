@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenIris Setup (Web)</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="container">
+    <h1 class="app-title">OpenIris Setup</h1>
+    <section class="card" id="connectCard">
+      <div class="card-header"><h2>Connection</h2></div>
+      <div class="card-body">
+        <div class="row">
+          <button id="btnSelectPort" class="btn btn-primary">Select Serial Port</button>
+          <button id="btnDisconnect" class="btn btn-secondary" disabled>Disconnect</button>
+          <label class="field">Baud:
+            <select id="baudSelect">
+              <option value="115200">115200</option>
+              <option value="921600">921600</option>
+            </select>
+          </label>
+          <label class="toggle small"><input type="checkbox" id="chkDebug" /> Debug</label>
+        </div>
+        <div class="row mt-8"><span id="connStatus" class="muted">Disconnected</span></div>
+      </div>
+    </section>
+
+    <section class="card" id="actionsCard" style="display:none;">
+      <div class="card-header"><h2>Actions</h2></div>
+      <div class="card-body">
+        <ul class="subtabs" id="mainTabs">
+          <li class="subtab active" data-target="tab-wifi">WiFi</li>
+          <li class="subtab" data-target="tab-mdns">Name</li>
+          <li class="subtab" data-target="tab-mode">Mode</li>
+          <li class="subtab" data-target="tab-led">LED</li>
+          <li class="subtab" data-target="tab-logs">Logs</li>
+          <li class="subtab" data-target="tab-summary">Summary</li>
+        </ul>
+        <div class="panels">
+          <div id="tab-wifi" class="panel" style="display:block;">
+            <div class="row">
+              <button class="btn btn-secondary" id="btnWifiScan">Scan Networks</button>
+              <button class="btn" id="btnWifiShow">Show Stored List</button>
+              <button class="btn" id="btnWifiConfigure" disabled>Configure WiFi</button>
+              <button class="btn" id="btnWifiConnect" disabled>Connect</button>
+              <button class="btn" id="btnWifiStatus">Status</button>
+              <button class="btn" id="btnWifiAuto">Auto Setup</button>
+            </div>
+            <div class="row mt-12">
+              <div class="wifi-col" style="flex:1; min-width:320px;">
+                <h3 class="muted small">Scan Results</h3>
+                <table id="wifiTable" class="wifi-table" style="display:none;">
+                  <thead><tr><th>#</th><th>SSID</th><th>Ch</th><th>RSSI</th><th>Security</th></tr></thead>
+                  <tbody id="wifiTbody"></tbody>
+                </table>
+                <div id="wifiScanMsg" class="small muted"></div>
+              </div>
+              <div class="wifi-col" style="flex:1; min-width:300px;">
+                <h3 class="muted small">Configure</h3>
+                <div class="row mt-4">
+                  <label class="field">SSID: <input type="text" id="cfgSsid" placeholder="Select or enter" /></label>
+                </div>
+                <div class="row mt-4">
+                  <label class="field">Password: <input type="password" id="cfgPwd" /></label>
+                </div>
+                <div class="row mt-8">
+                  <button class="btn btn-primary" id="btnApplyWifi" disabled>Apply Credentials</button>
+                </div>
+                <div class="row mt-8"><span id="wifiCfgMsg" class="small muted"></span></div>
+              </div>
+            </div>
+          </div>
+          <div id="tab-mdns" class="panel" style="display:none;">
+            <div class="row">
+              <button class="btn" id="btnReadName">Read</button>
+              <input type="text" id="nameInput" placeholder="device-name" />
+              <button class="btn btn-primary" id="btnApplyName">Apply</button>
+            </div>
+            <div class="row mt-8"><span id="nameMsg" class="small muted"></span></div>
+          </div>
+          <div id="tab-mode" class="panel" style="display:none;">
+            <div class="row">
+              <strong>Current:</strong>&nbsp;<span id="modeCurrent">—</span>
+            </div>
+            <div class="row mt-12 mode-options">
+              <label><input type="radio" name="modeOpt" value="wifi" /> WiFi</label>
+              <label><input type="radio" name="modeOpt" value="uvc" /> UVC</label>
+              <label><input type="radio" name="modeOpt" value="setup" /> Setup</label>
+              <button class="btn btn-secondary" id="btnModeApply" style="margin-left:16px;">Apply</button>
+            </div>
+            <div class="row mt-8"><span id="modeMsg" class="small muted"></span></div>
+          </div>
+          <div id="tab-led" class="panel" style="display:none;">
+            <div class="row">
+              <button class="btn" id="btnLedRead">Read Duty</button>
+              <input type="number" id="ledDutyInput" min="0" max="100" style="width:90px;" />
+              <button class="btn btn-primary" id="btnLedApply">Set</button>
+            </div>
+            <div class="row mt-8"><span id="ledMsg" class="small muted"></span></div>
+          </div>
+          <div id="tab-logs" class="panel" style="display:none;">
+            <div class="row">
+              <button class="btn btn-secondary" id="btnStartLogs">Start Logs</button>
+              <button class="btn" id="btnStopLogs" disabled>Stop</button>
+            </div>
+            <pre id="logOutput" class="log-box"></pre>
+          </div>
+          <div id="tab-summary" class="panel" style="display:none;">
+            <div class="row">
+              <button class="btn btn-secondary" id="btnSummary">Refresh Summary</button>
+            </div>
+            <pre id="summaryOutput" class="summary-box"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="debugCard" style="display:none;">
+      <div class="card-header"><h2>Debug</h2></div>
+      <div class="card-body">
+        <pre id="debugLog" class="debug-log"></pre>
+      </div>
+    </section>
+  </div>
+  <script type="module" src="./dist/index.js"></script>
+</body>
+</html>

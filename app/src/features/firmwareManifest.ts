@@ -1,3 +1,4 @@
+import { dbg } from "../ui/debug";
 
 export type FirmwareItem = { name?: string; file: string; address?: string; source?: 'binaries' | 'legacy' };
 
@@ -203,7 +204,7 @@ export async function loadPrebuiltManifest() {
     } catch {}
     renderPrebuiltSelect();
   } catch (e) {
-    console.warn("No prebuilt list or failed to load.", e);
+  dbg(`No prebuilt list or failed to load. ${((e as any)?.message ?? e)}`, 'info');
   }
 }
 

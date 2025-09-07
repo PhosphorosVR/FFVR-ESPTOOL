@@ -252,24 +252,7 @@
         if (btnClose) btnClose.addEventListener('click', function(){ setFull(false); });
         document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && isFull){ setFull(false); }});
       })();
-      (function(){
-        var lblConnTo = document.getElementById('lblConnTo');
-        var tabProgram = document.querySelector('#tabs .tab[data-target="program"]');
-        var tabConsole = document.querySelector('#tabs .tab[data-target="console"]');
-        var tabTools = document.querySelector('#tabs .tab[data-target="tools"]');
-        var tabUpdate = document.querySelector('#tabs .tab[data-target="update"]');
-        function enable(){
-          tabProgram && tabProgram.classList.remove('disabled');
-          tabConsole && tabConsole.classList.remove('disabled');
-          tabTools && tabTools.classList.remove('disabled');
-          tabUpdate && tabUpdate.classList.remove('disabled');
-          if (tabProgram) { tabProgram.click(); }
-        }
-        var mo = new MutationObserver(function(){
-          if (lblConnTo && lblConnTo.style.display !== 'none') { enable(); }
-        });
-        if (lblConnTo) mo.observe(lblConnTo, { attributes: true, attributeFilter: ['style'] });
-      })();
+  // Removed old auto-enable; now handled in connection.ts via applyTabMode(mode)
       (function(){
         var tabs = Array.from(document.querySelectorAll('#tabs .tab'));
         function show(id){

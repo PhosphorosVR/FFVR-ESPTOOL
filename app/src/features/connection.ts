@@ -1,7 +1,7 @@
 import { ESPLoader, LoaderOptions, Transport } from "ffvr-esptool/index.js";
 import { state } from "../core/state";
 import { serialLib, startPortPresenceMonitor, handlePortDisconnected } from "../core/serial";
-import { el } from "../ui/dom";
+import { el, applyTabMode } from "../ui/dom";
 import { updateConnStatusDot, hideConnectAlert, showConnectAlert } from "../ui/alerts";
 import { dbg } from "../ui/debug";
 
@@ -38,28 +38,55 @@ export function wireConnection(term: any) {
       if (state.device === null) {
         state.device = await serialLib.requestPort({});
       }
-      state.transport = new Transport(state.device, true);
-      const flashOptions = {
-        transport: state.transport,
-        baudrate: parseInt((baudSel as any).value),
-        terminal: { clean() { term?.clear?.(); }, writeLine(d) { term?.writeln?.(d); }, write(d) { term?.write?.(d); } },
-        debugLogging: el.debugLogging()?.checked,
-      } as unknown as LoaderOptions;
       state.lastBaud = parseInt((baudSel as any).value) || 115200;
-      state.esploader = new ESPLoader(flashOptions);
+      // Always create a fresh transport (raw). Boot attempt will use it.
+      state.transport = new Transport(state.device, true);
 
-      state.chip = await state.esploader.main();
-      try {
-        state.deviceMac = await (state.esploader as any).chip.readMac(state.esploader);
-      } catch (e) {
-        console.warn("Could not read MAC:", e);
+      // Attempt bootloader handshake with timeout; if fails, fall back to runtime JSON mode
+      const attemptBoot = async (): Promise<boolean> => {
+        try {
+          const flashOptions = {
+            transport: state.transport,
+            baudrate: state.lastBaud,
+            terminal: { clean() { term?.clear?.(); }, writeLine(d) { term?.writeln?.(d); }, write(d) { term?.write?.(d); } },
+            debugLogging: el.debugLogging()?.checked,
+          } as unknown as LoaderOptions;
+          state.esploader = new ESPLoader(flashOptions);
+          const bootPromise = state.esploader.main();
+          const chip = await Promise.race([
+            bootPromise,
+            new Promise<string>((_, rej) => setTimeout(() => rej(new Error('boot timeout')), 2500))
+          ]) as string;
+          state.chip = chip;
+          try {
+            state.deviceMac = await (state.esploader as any).chip.readMac(state.esploader);
+          } catch (e) {
+            dbg(`WARN: Could not read MAC: ${((e as any)?.message ?? e)}`, 'info');
+            state.deviceMac = null;
+          }
+          state.connectionMode = 'boot';
+          dbg(`Bootloader mode connected: ${state.chip}`, 'info');
+          return true;
+        } catch (e) {
+          dbg(`Bootloader handshake failed (${(e as any)?.message || e}); trying runtime CDC...`, 'info');
+          try { state.esploader = null; } catch {}
+          return false;
+        }
+      };
+
+      const successBoot = await attemptBoot();
+      if (!successBoot) {
+        // Runtime mode: just mark as connected; we can still use transport for JSON tools.
+        state.connectionMode = 'runtime';
+        state.chip = null;
         state.deviceMac = null;
       }
-      dbg(`Connected to chip ${state.chip}${state.deviceMac ? ' MAC ' + state.deviceMac : ''}`, 'info');
-      console.log("Settings done for :" + state.chip);
+
+      // Compose label parts
       el.lblBaudrate() && (el.lblBaudrate()!.style.display = "none");
       const info = extractDeviceInfo((state.transport as any)?.device);
       const parts: string[] = [];
+      if (state.connectionMode === 'runtime') parts.push('Runtime (CDC)');
       if (state.chip) parts.push(cleanChipName(state.chip));
       if ((info as any).serial && (info as any).product) parts.push(`${(info as any).product} (SN ${(info as any).serial})`);
       else if ((info as any).serial) parts.push(`SN ${(info as any).serial}`);
@@ -70,18 +97,32 @@ export function wireConnection(term: any) {
       if (baudSel) (baudSel as any).style.display = "none";
       if (connectButton) connectButton.style.display = "none";
       if (disconnectButton) disconnectButton.style.display = "initial";
-      if (traceButton) traceButton.style.display = "initial";
-      if (eraseButton) eraseButton.style.display = "initial";
-      el.filesDiv() && (el.filesDiv()!.style.display = "initial");
+      // Only allow trace / erase / file flashing in boot mode
+      if (state.connectionMode === 'boot') {
+        if (traceButton) traceButton.style.display = "initial";
+        if (eraseButton) eraseButton.style.display = "initial";
+        el.filesDiv() && (el.filesDiv()!.style.display = "initial");
+      } else {
+        if (traceButton) traceButton.style.display = "none";
+        if (eraseButton) eraseButton.style.display = "none";
+        el.filesDiv() && (el.filesDiv()!.style.display = "none");
+      }
       state.isConnected = true;
       (window as any).isConnected = true;
       updateConnStatusDot(true);
       hideConnectAlert();
-      const tabProgram = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;
-      if (tabProgram) tabProgram.click();
+      applyTabMode(state.connectionMode);
+      // Select initial tab depending on mode
+      if (state.connectionMode === 'boot') {
+        const tabProgram = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;
+        tabProgram?.click();
+      } else {
+        const tabTools = document.querySelector('#tabs .tab[data-target="tools"]') as HTMLElement | null;
+        tabTools?.click();
+      }
       startPortPresenceMonitor();
     } catch (e: any) {
-      console.error(e);
+  // Logged to UI debug panel and terminal already
       term?.writeln?.(`Error: ${e.message}`);
       state.isConnected = false;
       (window as any).isConnected = false;
@@ -111,9 +152,8 @@ export function wireConnection(term: any) {
       await state.esploader?.eraseFlash();
       dbg('Erase flash done', 'info');
     } catch (e: any) {
-      console.error(e);
+  dbg(`Erase error ${e?.message || e}`, 'info');
       term?.writeln?.(`Error: ${e.message}`);
-      dbg(`Erase error ${e?.message || e}`, 'info');
     } finally {
       (eraseButton as HTMLButtonElement).disabled = false;
     }

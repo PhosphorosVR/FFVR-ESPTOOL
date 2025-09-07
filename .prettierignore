@@ -1,0 +1,12 @@
+# Scope Prettier to app/src only
+*
+!app/
+app/*
+!app/src/
+
+# Ignore declaration files and generated outputs
+app/src/**/*.d.ts
+lib/
+dist/
+.parcel-cache/
+node_modules/

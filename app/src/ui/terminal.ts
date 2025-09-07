@@ -111,7 +111,7 @@ export async function startConsole() {
     dbg(`Console transport connected ${baud}`, 'info');
   } catch (e) {
     await new Promise(r => setTimeout(r, 100));
-    try { await state.transport?.connect(state.lastBaud); } catch (e2) { console.warn('Console connect issue:', e2); }
+  try { await state.transport?.connect(state.lastBaud); } catch (e2) { dbg(`Console connect issue: ${((e2 as any)?.message ?? e2)}`, 'info'); }
   }
   state.isConsoleClosed = false;
 

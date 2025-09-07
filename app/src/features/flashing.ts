@@ -1,8 +1,8 @@
 import { state } from "../core/state";
 import type { FlashOptions } from "ffvr-esptool/index.js";
 import { prebuiltItems } from "./firmwareManifest";
+import { dbg } from "../ui/debug";
 
-declare let Terminal;
 declare let CryptoJS;
 
 export function handleFileSelect(evt: any) {
@@ -131,7 +131,7 @@ export async function performFlash(table: HTMLTableElement, prebuiltSelect: HTML
         fileArray.push({ data: bin, address: addr });
       }
     } catch (e) {
-      console.error("Failed to load prebuilt firmware:", e);
+      dbg(`Failed to load prebuilt firmware: ${((e as any)?.message ?? e)}`, 'info');
       (alertMsg as any).textContent = "Failed to load selected firmware.";
       (alertDiv as any).style.display = "block";
       return;
@@ -172,7 +172,7 @@ export async function performFlash(table: HTMLTableElement, prebuiltSelect: HTML
       }, 1500);
     } catch {}
   } catch (e: any) {
-    console.error(e);
+    dbg(`Flash error ${e?.message || e}`,'info');
     term?.writeln?.(`Error: ${e.message}`);
   } finally {
     for (let index = 1; index < (table as any).rows.length; index++) {

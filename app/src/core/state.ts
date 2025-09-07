@@ -9,6 +9,8 @@ export type AppState = {
   lastBaud: number;
   isConnected: boolean;
   isConsoleClosed: boolean;
+  // 'boot' = ROM/bootloader mode (full flashing + console), 'runtime' = CDC firmware JSON mode (Tools only)
+  connectionMode: 'boot' | 'runtime' | null;
 };
 
 export const state: AppState = {
@@ -20,4 +22,5 @@ export const state: AppState = {
   lastBaud: 115200,
   isConnected: false,
   isConsoleClosed: true,
+  connectionMode: null,
 };

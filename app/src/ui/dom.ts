@@ -40,6 +40,24 @@ export function setTabsEnabled(enabled: boolean) {
   } catch {}
 }
 
+// Enable/disable tabs depending on connection mode. In 'runtime' we only allow Tools + Update.
+export function applyTabMode(mode: 'boot' | 'runtime' | null) {
+  try {
+    const tabs = Array.from(document.querySelectorAll('#tabs .tab')) as HTMLElement[];
+    tabs.forEach(t => t.classList.add('disabled'));
+    if (!mode) return;
+    const allowAll = mode === 'boot';
+    const enableTargets = allowAll ? ['program','console','tools','update'] : ['tools','update'];
+    enableTargets.forEach(id => {
+      const tab = document.querySelector(`#tabs .tab[data-target="${id}"]`) as HTMLElement | null;
+      if (tab) tab.classList.remove('disabled');
+    });
+  } catch {}
+}
+
+// Expose for inline scripts
+try { (window as any).applyTabMode = applyTabMode; } catch {}
+
 export function switchToConsoleTab() {
   const tabConsole = document.querySelector('#tabs .tab[data-target="console"]') as HTMLElement | null;
   if (tabConsole) {

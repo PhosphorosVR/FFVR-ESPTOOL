@@ -59,6 +59,7 @@ export async function handlePortDisconnected(reason: string = 'Device disconnect
   try {
     state.isConnected = false;
     (window as any).isConnected = false;
+  try { (state as any).connectionMode = null; } catch {}
   updateConnStatusDot(false);
   const lblConn = el.lblConnTo(); if (lblConn && lblConn.style) lblConn.style.display = 'none';
   const lblBaud = el.lblBaudrate(); if (lblBaud && lblBaud.style) lblBaud.style.display = 'initial';

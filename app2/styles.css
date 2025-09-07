@@ -1,0 +1,32 @@
+body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#0b1117;color:#e6ecf2;-webkit-font-smoothing:antialiased}
+.container{max-width:1200px;margin:0 auto;padding:20px 24px}
+.app-title{margin:0 0 20px;font-size:22px;font-weight:600;letter-spacing:.5px}
+.card{background:#131b26;border:1px solid #223243;border-radius:14px;margin-bottom:20px;box-shadow:0 4px 24px rgba(0,0,0,.4);overflow:hidden}
+.card-header{padding:12px 16px;border-bottom:1px solid #223243;background:linear-gradient(180deg,#172231,#131b26)}
+.card-header h2{margin:0;font-size:15px;font-weight:600}
+.card-body{padding:14px 16px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.field{display:flex;align-items:center;gap:6px;font-size:14px}
+.muted{color:#9aa7b3}
+.small{font-size:12px}
+.btn{background:#1c2735;border:1px solid #2b3d52;color:#e6ecf2;padding:0 14px;height:36px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:13px;transition:background .15s ease,border-color .15s ease;}
+.btn:hover{background:#233146}
+.btn-primary{background:linear-gradient(180deg,#4f8cff,#3b71d6);border-color:#2757b4}
+.btn-primary:hover{filter:brightness(1.05)}
+.btn-secondary{background:#243246}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.subtabs{list-style:none;padding:0;margin:0 0 10px;display:flex;flex-wrap:wrap;gap:8px}
+.subtab{padding:6px 12px;border:1px solid #223243;border-radius:999px;background:#182330;font-size:12px;color:#9aa7b3;cursor:pointer}
+.subtab.active{background:#4f8cff;color:#0b1117;font-weight:600;border-color:#2c5fb3}
+.panels{border-top:1px solid #223243;padding-top:12px}
+.panel{animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.wifi-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}
+.wifi-table th,.wifi-table td{padding:6px 8px;border-bottom:1px solid #223243;text-align:left}
+.wifi-table th{background:#182330;font-weight:500}
+.wifi-table tr:hover{background:#1d2a39}
+.wifi-table tr.selected{background:#243246}
+.log-box,.summary-box{background:#0d141d;border:1px solid #223243;border-radius:10px;padding:10px;font-size:12px;min-height:160px;max-height:260px;overflow:auto;white-space:pre-wrap}
+.debug-log{background:#0d141d;border:1px solid #223243;border-radius:10px;padding:10px;font-size:11px;max-height:220px;overflow:auto;white-space:pre-wrap;color:#cfe1ff}
+.mode-options label{display:flex;align-items:center;gap:4px;font-size:13px}
+.toggle{font-size:12px}

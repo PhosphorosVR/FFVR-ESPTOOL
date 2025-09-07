@@ -8,6 +8,8 @@ import { initTerminal, getTerminal, startConsole, stopConsole } from "./ui/termi
 import { loadPrebuiltManifest, wireLegacyToggle } from "./features/firmwareManifest";
 import { wireConnection } from "./features/connection";
 import { wireWifiButtons } from "./features/wifi";
+import { ensureTransportConnected } from "./core/serial";
+import { sendAndExtract } from "./core/jsonClient";
 import { addRow, performFlash } from "./features/flashing";
 
 // Initialize debug panel visibility and prior flash success banner
@@ -100,4 +102,96 @@ if (programButton) (programButton as any).onclick = async () => {
 // Add file row
 const addFileButton = el.addFileButton();
 if (addFileButton) (addFileButton as any).onclick = () => { const t = el.table(); if (t) addRow(t); };
+
+// Lightweight wiring for mDNS and Device Mode panels
+function initMdnsPanel() {
+	const panel = document.getElementById('tool-mdns');
+	if (!panel) return;
+	panel.innerHTML = `
+		<div class="row">
+			<label class="field">Device name (mDNS/UVC): <input type="text" id="mdnsNameInput" placeholder="my-device" /></label>
+			<input class="btn btn-primary" type="button" id="mdnsReadBtn" value="Read" />
+			<input class="btn btn-secondary" type="button" id="mdnsApplyBtn" value="Apply" />
+		</div>
+		<div class="row mt-8"><span id="mdnsMsg" class="muted"></span></div>
+	`;
+	const input = document.getElementById('mdnsNameInput') as HTMLInputElement | null;
+	const readBtn = document.getElementById('mdnsReadBtn') as HTMLButtonElement | null;
+	const applyBtn = document.getElementById('mdnsApplyBtn') as HTMLButtonElement | null;
+	const msg = document.getElementById('mdnsMsg') as HTMLElement | null;
+	if (readBtn) readBtn.onclick = async () => {
+		try { msg && (msg.textContent = 'Reading…'); } catch {}
+		await ensureTransportConnected();
+		const name = await sendAndExtract(state.transport!, 'get_mdns_name');
+		if (typeof name === 'string' && input) input.value = name;
+		msg && (msg.textContent = typeof name === 'string' ? `Current: ${name}` : 'Unable to read');
+	};
+	if (applyBtn) applyBtn.onclick = async () => {
+		const name = (input?.value || '').trim();
+		if (!name) { msg && (msg.textContent = 'Enter a name first'); return; }
+		await ensureTransportConnected();
+		const ok = await sendAndExtract(state.transport!, 'set_mdns', { hostname: name });
+		msg && (msg.textContent = ok ? 'Saved. Restart device to apply everywhere.' : 'Failed to save');
+	};
+}
+
+function initDeviceModePanel() {
+	const panel = document.getElementById('tool-mode');
+	if (!panel) return;
+	panel.innerHTML = `
+		<div class="row">
+			<strong>Current:</strong>&nbsp;<span id="devModeCurrent">—</span>
+		</div>
+			<div class="row mt-16">
+			<label><input type="radio" name="devModeOpt" value="wifi" id="devModeWifi" /> WiFi</label>
+		</div>
+		<div class="row mt-4">
+			<label><input type="radio" name="devModeOpt" value="uvc" id="devModeUvc" /> UVC</label>
+		</div>
+		<div class="row mt-4">
+			<label><input type="radio" name="devModeOpt" value="auto" id="devModeAuto" /> Auto</label>
+		</div>
+		<div class="row mt-12">
+			<input class="btn btn-secondary" type="button" id="devModeApplyBtn" value="Apply" />
+		</div>
+		<div class="row mt-8"><span id="devModeMsg" class="muted"></span></div>
+	`;
+	const currentEl = document.getElementById('devModeCurrent') as HTMLElement | null;
+	const radios = Array.from(panel.querySelectorAll('input[name="devModeOpt"]')) as HTMLInputElement[];
+	const applyBtn = document.getElementById('devModeApplyBtn') as HTMLButtonElement | null;
+	const msg = document.getElementById('devModeMsg') as HTMLElement | null;
+	async function refreshCurrent() {
+		try {
+			if (!(window as any).isConnected) return;
+			msg && (msg.textContent = '');
+			currentEl && (currentEl.textContent = '…');
+			await ensureTransportConnected();
+			const mode = await sendAndExtract(state.transport!, 'get_device_mode');
+			currentEl && (currentEl.textContent = String(mode));
+			const valid = mode === 'wifi' || mode === 'uvc' || mode === 'auto';
+			if (valid) {
+				const r = radios.find(x => x.value === mode);
+				if (r) r.checked = true;
+			}
+		} catch {
+			currentEl && (currentEl.textContent = 'unknown');
+		}
+	}
+	if (applyBtn) applyBtn.onclick = async () => {
+		const checked = radios.find(r => r.checked);
+		const mode = ((checked?.value) || 'wifi') as 'wifi' | 'uvc' | 'auto';
+		await ensureTransportConnected();
+		const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode });
+		msg && (msg.textContent = ok ? 'Mode saved. Please restart device.' : 'Failed to save');
+		if (ok) { currentEl && (currentEl.textContent = mode); }
+	};
+	// Auto-read on init
+	refreshCurrent();
+		// Refresh whenever the Device Mode tab is clicked
+		const devTab = document.querySelector('#toolTabs .subtab[data-target="tool-mode"]') as HTMLElement | null;
+		if (devTab) devTab.addEventListener('click', () => { refreshCurrent(); });
+}
+
+initMdnsPanel();
+initDeviceModePanel();
 

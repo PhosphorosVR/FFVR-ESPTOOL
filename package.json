@@ -7,15 +7,18 @@
   "license": "Apache-2.0",
   "files": [
     "lib",
-  "dist/bundle.js"
+    "dist/bundle.js"
   ],
   "scripts": {
     "build": "npm run clean && tsc && rollup --config",
     "clean": "rimraf lib bundle.js .parcel-cache esptool-js-*.tgz",
-    "format": "prettier --write \"src/**/*.ts\"",
+    "format": "prettier --write \"app/src/**/*.ts\"",
     "genDocs": "rimraf docs && typedoc",
-    "lint": "eslint . --ext .ts",
-    "lintAndFix": "eslint . --ext .ts --fix",
+    "lint": "eslint app/src --ext .ts",
+    "lintAndFix": "eslint app/src --ext .ts --fix",
+    "build-app2": "esbuild app2/src/index.ts --bundle --sourcemap --format=esm --outdir=app2/dist",
+    "dev-app2": "esbuild app2/src/index.ts --bundle --sourcemap --format=esm --outdir=app2/dist --watch --servedir=app2",
+    "dev": "npm run dev-app2",
     "prepare": "npm run build",
     "test": "echo \"Error: no test specified\"",
     "prepublishOnly": "npm run test && npm run lint"
@@ -28,6 +31,8 @@
     "url": "https://github.com/PhosphorosVR/FFVR-ESPTOOL/issues"
   },
   "dependencies": {
+    "app": "^0.1.0",
+    "app2": "^0.0.6",
     "atob-lite": "^2.0.0",
     "pako": "^2.1.0",
     "tslib": "^2.4.1"
@@ -44,6 +49,7 @@
     "@typescript-eslint/eslint-plugin": "^5.43.0",
     "@typescript-eslint/parser": "^5.43.0",
     "babel-loader": "^9.1.0",
+    "esbuild": "^0.21.5",
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "eslint-plugin-jsdoc": "^46.4.5",

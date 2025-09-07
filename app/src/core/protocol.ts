@@ -25,6 +25,12 @@ export async function sendJsonCommand(transport: Transport, command: string, par
   const dec = new TextDecoder();
   let buffer = "";
   const start = Date.now();
+  // For WiFi scans, prefer a non-empty result; if the first result is empty,
+  // allow a grace period to collect a later, populated result before returning.
+  let emptyScanSeenAt: number | null = null;
+  let lastEmptyNetworks: any[] | null = null;
+  // Derive a reasonable grace window from timeout (max 5s, min 1.5s)
+  const scanGraceMs = Math.max(1500, Math.min(5000, Math.floor(timeoutMs / 8)));
   while (Date.now() - start < timeoutMs) {
     const loop = (transport as any).rawRead();
     const { value, done } = await loop.next();
@@ -34,14 +40,9 @@ export async function sendJsonCommand(transport: Transport, command: string, par
     chunk = chunk.replace(/\x1b\[[0-9;]*m/g, "").replace(/\r/g, "\n");
     buffer += chunk;
 
-    if (command === 'scan_networks') {
-      const re = /\{\s*"networks"\s*:\s*\[[\s\S]*?\]\s*\}/m;
-      const m = buffer.match(re);
-      if (m && m[0]) {
-        const jsonStr = m[0];
-        try { JSON.parse(jsonStr); } catch {}
-        return { results: [ JSON.stringify({ result: jsonStr }) ] };
-      }
+    // If we previously saw an empty scan, and no further data arrived within a short grace period, return it.
+  if (command === 'scan_networks' && emptyScanSeenAt && Date.now() - emptyScanSeenAt > scanGraceMs) {
+      return { networks: lastEmptyNetworks || [] };
     }
 
     let sIdx = buffer.indexOf('{');
@@ -79,8 +80,17 @@ export async function sendJsonCommand(transport: Transport, command: string, par
               return null;
             };
             const nets = findNetworks(obj);
-            if (nets && nets.length >= 0) {
-              return { networks: nets };
+            if (nets) {
+              if (nets.length > 0) {
+                return { networks: nets };
+              }
+              // First hit but empty: remember and wait briefly for a better result
+              if (!emptyScanSeenAt) {
+                emptyScanSeenAt = Date.now();
+                lastEmptyNetworks = nets;
+                try { dbg(`Scan empty result observed; waiting up to ${scanGraceMs}ms for populated list...`, 'info'); } catch {}
+              }
+              // Continue reading without returning yet
             }
           }
           if (obj && (Object.prototype.hasOwnProperty.call(obj, 'results') || Object.prototype.hasOwnProperty.call(obj, 'error'))) {
@@ -96,6 +106,9 @@ export async function sendJsonCommand(transport: Transport, command: string, par
         break;
       }
     }
+  }
+  if (command === 'scan_networks' && lastEmptyNetworks) {
+    return { networks: lastEmptyNetworks };
   }
   return { error: "Command timeout" };
 }
