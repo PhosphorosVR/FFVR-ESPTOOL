@@ -3,14 +3,16 @@
     {
       "name": "FFVR",
       "items": [
-        { "file": "FFVR Eyes [a.0.0.1].bin", "address": "0x0" },
-        { "file": "FFVR Face [a.0.0.1].bin", "address": "0x0" }
+        { "file": "FFVR Eye L [0.0.1].bin", "address": "0x0" },
+        { "file": "FFVR Face [0.0.1].bin", "address": "0x0" },
+        { "file": "FFVR Eye R [0.0.1].bin", "address": "0x0" }
+        
       ]
     },
     {
       "name": "XIAO / Seeed",
       "items": [
-        { "file": "ESP32-S3 Sense [a0.0.1].bin", "address": "0x0" }
+        { "file": "Platzhalter.bin", "address": "0x0" }
       ]
     },
     {
