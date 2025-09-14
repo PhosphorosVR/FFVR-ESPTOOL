@@ -10,6 +10,7 @@ import { wireConnection } from "./features/connection";
 import { wireWifiButtons } from "./features/wifi";
 import { ensureTransportConnected } from "./core/serial";
 import { sendAndExtract } from "./core/jsonClient";
+import { findAssociatedUvc, startUvcPreview, stopUvcPreview } from "./core/uvc";
 import { addRow, performFlash } from "./features/flashing";
 
 // Initialize debug panel visibility and prior flash success banner
@@ -179,11 +180,27 @@ function initLedPanel() {
 			<input class="btn btn-secondary" type="button" id="ledApplyBtn" value="Apply" />
 		</div>
 		<div class="row mt-8"><span id="ledMsg" class="muted"></span></div>
+		<hr class="mt-16" />
+		<div class="row mt-12">
+			<strong>UVC Preview</strong>
+		</div>
+		<div class="row mt-8" id="uvcControls" style="align-items:center; gap:8px;">
+			<span class="muted" id="uvcInfo"></span>
+			<span class="spacer" style="flex:1 1 auto;"></span>
+			<input class="btn btn-secondary" type="button" id="uvcStopBtn" value="Stop" disabled />
+		</div>
+		<div class="row mt-8">
+			<video id="uvcVideo" width="320" height="240" style="border:1px solid var(--border); border-radius:6px; display:block; background:transparent;" playsinline muted></video>
+		</div>
 	`;
 	const dutyInput = document.getElementById('ledDutyInput') as HTMLInputElement | null;
 	const readBtn = document.getElementById('ledReadBtn') as HTMLButtonElement | null;
 	const applyBtn = document.getElementById('ledApplyBtn') as HTMLButtonElement | null;
 	const msg = document.getElementById('ledMsg');
+	const stopBtn = document.getElementById('uvcStopBtn') as HTMLButtonElement | null;
+	const info = document.getElementById('uvcInfo') as HTMLElement | null;
+	const video = document.getElementById('uvcVideo') as HTMLVideoElement | null;
+	// No explicit start button; we'll auto-start on tab open
 	async function readAll() {
 		if (!(window as any).isConnected) return; msg && (msg.textContent = 'Reading…');
 		await ensureTransportConnected();
@@ -200,8 +217,23 @@ function initLedPanel() {
 		await sendAndExtract(state.transport!, 'set_led_duty_cycle', { dutyCycle: val });
 		await readAll();
 	});
+	stopBtn && (stopBtn.onclick = () => { if (video) { stopUvcPreview(video); } if (stopBtn) stopBtn.disabled = true; });
 	const tab = document.querySelector('#toolTabs .subtab[data-target="tool-pwm"]');
-	tab?.addEventListener('click', () => { readAll(); });
+	tab?.addEventListener('click', async () => {
+		await readAll();
+		try {
+			if (video) {
+				const assoc = await findAssociatedUvc();
+				if (info) info.textContent = assoc.deviceId ? `Found UVC: ${assoc.label || 'camera'} (opening…)` : 'UVC device not found';
+				if (assoc.deviceId) {
+					const ok = await startUvcPreview(video, info || undefined);
+					if (stopBtn) stopBtn.disabled = !ok;
+				} else {
+					if (stopBtn) stopBtn.disabled = true;
+				}
+			}
+		} catch {}
+	});
 }
 
 function initStreamingPanel() {
