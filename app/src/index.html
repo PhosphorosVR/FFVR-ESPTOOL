@@ -32,10 +32,6 @@
               <input class="btn btn-primary" type="button" id="connectButton" value="Connect" />
               <input class="btn btn-warning" type="button" id="disconnectButton" value="Disconnect" />
             </div>
-            <div id="uvcPreviewBox" class="row mt-12" style="display:none; align-items:flex-start; gap:12px;">
-              <video id="uvcPreviewVideo" width="320" height="240" style="border:1px solid var(--border); border-radius:10px; display:block; background:transparent;" playsinline muted></video>
-              <div class="small muted" id="uvcPreviewInfo">UVC preview wird automatisch gestartet, wenn verfügbar.</div>
-            </div>
             <details class="advanced mt-8">
               <summary>Advanced</summary>
               <div class="advanced-body">
@@ -54,6 +50,16 @@
                     <input type="checkbox" id="debugLogging" checked />
                     Debug
                   </label>
+                </div>
+                <div class="row mt-8">
+                  <label class="toggle" for="uvcEnable">
+                    <input type="checkbox" id="uvcEnable" />
+                    Enable UVC preview
+                  </label>
+                </div>
+                <div id="uvcPreviewBox" class="row mt-8" style="display:none; align-items:flex-start; gap:12px;">
+                  <video id="uvcPreviewVideo" width="320" height="240" style="border:1px solid var(--border); border-radius:10px; display:block; background:transparent;" playsinline muted></video>
+                  <div class="small muted" id="uvcPreviewInfo">Aktiviere „Enable UVC preview“, um die Kamera zu sehen.</div>
                 </div>
                 <div class="row mt-8">
                   <label class="toggle" for="demoMode">
@@ -178,7 +184,7 @@
               
               <li class="subtab" role="tab" aria-selected="false" data-target="tool-mode">🔄 Mode</li>
               <li class="subtab" role="tab" aria-selected="false" data-target="tool-pwm">💡 LED</li>
-              <li class="subtab" role="tab" aria-selected="false" data-target="tool-logs">📖 Logs</li>
+              
               <li class="subtab" role="tab" aria-selected="false" data-target="tool-summary">🧩 Summary</li>
             </ul>
             <div class="tool-panels">
@@ -214,7 +220,7 @@
               
               <div id="tool-mode" class="tool-panel" role="tabpanel" style="display:none;"></div>
               <div id="tool-pwm" class="tool-panel" role="tabpanel" style="display:none;"></div>
-              <div id="tool-logs" class="tool-panel" role="tabpanel" style="display:none;"></div>
+              
               <div id="tool-summary" class="tool-panel" role="tabpanel" style="display:none"></div>
             </div>
           </div>

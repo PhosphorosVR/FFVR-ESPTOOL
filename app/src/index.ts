@@ -259,45 +259,13 @@ function initLedPanel() {
 	readAll();
 }
 
-// Streaming tab removed
-
-function initLogsPanel() {
-	const panel = document.getElementById('tool-logs'); if (!panel) return;
-	panel.innerHTML = `
-		<div class="row">
-			<input class="btn btn-secondary" type="button" id="logsToggleBtn" value="Start monitoring" />
-		</div>
-		<div class="row mt-8"><pre id="logsOutput" class="small" style="max-height:220px; overflow:auto; background:#0a0f18; padding:8px; border:1px solid var(--border); border-radius:8px;"></pre></div>
-	`;
-	const toggleBtn = document.getElementById('logsToggleBtn') as HTMLButtonElement | null;
-	const out = document.getElementById('logsOutput') as HTMLElement | null;
-		let reading = false;
-	const dec = new TextDecoder();
-	async function loop() {
-		if (!state.transport) return; // rely on rawRead if available
-		try {
-			while (reading) {
-				const r = (state.transport as any).rawRead();
-				const { value, done } = await r.next(); if (done) break; if (!value) continue;
-				const txt = dec.decode(value, { stream: true });
-				txt.split(/\r?\n/).forEach(line => {
-					if (!line) return; if (line.startsWith('{') && line.endsWith('}') && line.includes('heartbeat')) return;
-					if (out) { out.textContent += line + '\n'; out.scrollTop = out.scrollHeight; }
-				});
-			}
-		} catch {}
-	}
-	toggleBtn && (toggleBtn.onclick = async () => {
-		if (!reading) { reading = true; toggleBtn.value = 'Stop'; await loop(); }
-		else { reading = false; toggleBtn.value = 'Start monitoring'; }
-	});
-}
+// Streaming and Logs tabs removed
 
 function initSummaryPanel() {
 	const panel = document.getElementById('tool-summary'); if (!panel) return;
 	panel.innerHTML = `
-		<div class="row"><strong>Device summary</strong></div>
-		<div class="kv-list" id="summaryList">
+	<div class="row mt-8"><strong>Device summary</strong></div>
+	<div class="kv-list compact mt-8" id="summaryList">
 			<div class="kv"><div class="k">Serial</div><div class="v" id="sumSerial">—</div></div>
 			<div class="kv"><div class="k">Name</div><div class="v" id="sumName">—</div></div>
 			<div class="kv"><div class="k">Device</div><div class="v" id="sumDevice">—</div></div>
@@ -357,7 +325,6 @@ function initSummaryPanel() {
 initMdnsPanel();
 initDeviceModePanel();
 initLedPanel();
-initLogsPanel();
 initSummaryPanel();
 
 // Start/stop UVC preview in the main connect block when connection state changes
@@ -366,9 +333,17 @@ document.addEventListener('DOMContentLoaded', () => {
 		const video = document.getElementById('uvcPreviewVideo') as HTMLVideoElement | null;
 		const box = document.getElementById('uvcPreviewBox') as HTMLElement | null;
 		const info = document.getElementById('uvcPreviewInfo') as HTMLElement | null;
+		const uvcToggle = document.getElementById('uvcEnable') as HTMLInputElement | null;
 		if (!video || !box) return;
+		// Restore persisted preference
+		try {
+			const pref = localStorage.getItem('uvcEnable');
+			if (uvcToggle && (pref === '1' || pref === 'true')) { uvcToggle.checked = true; }
+		} catch {}
+		function isUvcEnabled() { return !!(uvcToggle && uvcToggle.checked); }
 		const startIfConnected = async () => {
 			if (!(window as any).isConnected) { box.style.display = 'none'; return; }
+			if (!isUvcEnabled()) { box.style.display = 'none'; if (info) info.textContent = 'Aktiviere "Enable UVC preview" im Advanced Menü.'; return; }
 			if ((state as any).connectionMode !== 'runtime') { box.style.display = 'none'; if (info) info.textContent = 'UVC preview only in runtime mode.'; return; }
 			const assoc = await findAssociatedUvc();
 			if (!assoc.deviceId) { if (info) info.textContent = 'Keine passende UVC-Kamera gefunden.'; box.style.display = 'none'; return; }
@@ -379,6 +354,13 @@ document.addEventListener('DOMContentLoaded', () => {
 		document.addEventListener('ffvr-connected', startIfConnected as any);
 		// Fallback: attempt shortly after load and after connect button hides
 		setTimeout(startIfConnected, 300);
+		// Handle toggle changes
+		if (uvcToggle) {
+			uvcToggle.addEventListener('change', async () => {
+				try { localStorage.setItem('uvcEnable', uvcToggle.checked ? '1' : '0'); } catch {}
+				await startIfConnected();
+			});
+		}
 	} catch {}
 });
 

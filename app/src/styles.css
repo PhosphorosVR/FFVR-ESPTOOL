@@ -17,13 +17,17 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, body { min-height: 100%; }
 body {
   margin: 0;
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-  background: radial-gradient(1200px 700px at 20% -10%, #12223a 0%, transparent 60%),
-              radial-gradient(1200px 700px at 120% 10%, #101b2c 0%, transparent 60%),
-              var(--bg);
+  background-color: var(--bg);
+  background-image: radial-gradient(1200px 700px at 20% -10%, #12223a 0%, transparent 60%),
+                    radial-gradient(1200px 700px at 120% 10%, #101b2c 0%, transparent 60%);
+  background-repeat: no-repeat, no-repeat;
+  background-attachment: fixed, fixed; /* keep gradients stable while scrolling */
+  background-size: 1400px 800px, 1400px 800px; /* ensure full coverage without tiling edges */
+  background-position: 20% -10%, 120% 10%;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -184,6 +188,8 @@ th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 
 /* Key-value list */
 .kv-list { display: grid; grid-template-columns: 1fr; gap: 8px; max-width: 520px; }
+.kv-list.compact { gap: 6px; }
 .kv { display: grid; grid-template-columns: 140px 1fr; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: #0f1520; }
+.kv-list.compact .kv { padding: 6px 8px; border-radius: 8px; }
 .kv .k { color: var(--muted); font-size: 12px; }
 .kv .v { color: var(--text); font-weight: 500; }
