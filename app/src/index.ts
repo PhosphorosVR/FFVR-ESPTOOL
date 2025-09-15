@@ -108,61 +108,75 @@ if (addFileButton) (addFileButton as any).onclick = () => { const t = el.table()
 // ----- Reworked unified tools panels matching openiris_setup.py capabilities -----
 function initMdnsPanel() {
 	const panel = document.getElementById('tool-mdns'); if (!panel) return;
-	panel.innerHTML = `
-		<div class="row">
-			<label class="field">Advertised name (mDNS + UVC): <input type="text" id="mdnsNameInput" placeholder="my-device" /></label>
-			<input class="btn btn-primary" type="button" id="mdnsReadBtn" value="Read" />
+    panel.innerHTML = `
+		<div class="row current-line"><span class="small muted">Current:</span><span class="v" id="mdnsCurrent">—</span></div>
+		<div class="row mt-24">
+			<label class="field">New advertise name:&nbsp;<input type="text" id="mdnsNameInput" placeholder="my-device" /></label>
 			<input class="btn btn-secondary" type="button" id="mdnsApplyBtn" value="Apply" />
 		</div>
 		<div class="row mt-8"><span id="mdnsMsg" class="muted"></span></div>
-		<div class="row mt-8 small muted">Applies to both http://&lt;name&gt;.local/ and USB video descriptor (restart device after change).</div>
+		<div class="row mt-8 small muted">Applies to both http://&lt;name&gt;.local/ and USB UVC descriptor (restart device after change).</div>
 	`;
 	const input = document.getElementById('mdnsNameInput') as HTMLInputElement | null;
-	const readBtn = document.getElementById('mdnsReadBtn') as HTMLButtonElement | null;
+	const currentEl = document.getElementById('mdnsCurrent') as HTMLElement | null;
 	const applyBtn = document.getElementById('mdnsApplyBtn') as HTMLButtonElement | null;
 	const msg = document.getElementById('mdnsMsg') as HTMLElement | null;
-	if (readBtn) readBtn.onclick = async () => {
-		msg && (msg.textContent = 'Reading…'); await ensureTransportConnected();
+	async function refresh() {
+		if (!(window as any).isConnected) { currentEl && (currentEl.textContent = '—'); return; }
+		currentEl && (currentEl.textContent = '…'); await ensureTransportConnected();
 		const name = await sendAndExtract(state.transport!, 'get_mdns_name');
-		if (typeof name === 'string' && input) input.value = name;
-		msg && (msg.textContent = typeof name === 'string' ? `Current: ${name}` : 'Failed');
-	};
+		currentEl && (currentEl.textContent = typeof name === 'string' ? name : '—');
+	}
 	if (applyBtn) applyBtn.onclick = async () => {
 		const val = (input?.value || '').trim(); if (!val) { msg && (msg.textContent = 'Enter a name'); return; }
 		await ensureTransportConnected();
 		const ok = await sendAndExtract(state.transport!, 'set_mdns', { hostname: val });
 		msg && (msg.textContent = ok ? 'Saved. Restart device.' : 'Failed to save');
+		if (ok) await refresh();
 	};
+	// Auto-load current when tab is opened or if already active
+	refresh();
+	const nameTab = document.querySelector('#toolTabs .subtab[data-target="tool-mdns"]');
+	nameTab?.addEventListener('click', () => { refresh(); });
 }
 
 function initDeviceModePanel() {
 	const panel = document.getElementById('tool-mode'); if (!panel) return;
-	panel.innerHTML = `
-		<div class="row"><strong>Current:</strong>&nbsp;<span id="devModeCurrent">—</span></div>
-		<div class="row mt-12 options-inline">
-			<label><input type="radio" name="devModeOpt" value="wifi" /> WiFi</label>
-			<label><input type="radio" name="devModeOpt" value="uvc" /> UVC</label>
-			<label><input type="radio" name="devModeOpt" value="setup" /> Setup</label>
+    panel.innerHTML = `
+		<div class="row current-line"><span class="small muted">Current:</span><span class="v" id="devModeCurrent">—</span></div>
+		<div class="row mt-24">
+			<div class="segmented" id="devModeSeg">
+				<button class="seg" data-value="wifi">WiFi</button>
+				<button class="seg" data-value="uvc">UVC</button>
+				<button class="seg" data-value="setup">Setup</button>
+			</div>
 		</div>
-		<div class="row mt-12">
+        <div class="row mt-24">
 			<input class="btn btn-secondary" type="button" id="devModeApplyBtn" value="Apply" />
 		</div>
 		<div class="row mt-8"><span id="devModeMsg" class="muted"></span></div>
 	`;
 	const currentEl = document.getElementById('devModeCurrent');
-	const radios = Array.from(panel.querySelectorAll('input[name="devModeOpt"]')) as HTMLInputElement[];
+	const seg = panel.querySelector('#devModeSeg') as HTMLElement | null;
 	const applyBtn = document.getElementById('devModeApplyBtn') as HTMLButtonElement | null;
 	const msg = document.getElementById('devModeMsg');
 	async function refresh() {
 		if (!(window as any).isConnected) return; try { currentEl && (currentEl.textContent = '…'); } catch {}
 		await ensureTransportConnected(); const mode = await sendAndExtract(state.transport!, 'get_device_mode');
 		currentEl && (currentEl.textContent = String(mode));
-		radios.forEach(r => { r.checked = (r.value === mode); });
+		const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
+		buttons.forEach(b => b.classList.toggle('active', b.dataset.value === mode));
 	}
+	if (seg) seg.addEventListener('click', (e) => {
+		const t = e.target as HTMLElement; if (!t || !t.classList.contains('seg')) return;
+		const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
+		buttons.forEach(b => b.classList.toggle('active', b === t));
+	});
 	if (applyBtn) applyBtn.onclick = async () => {
-		const checked = radios.find(r => r.checked) || radios[0];
+		const active = seg?.querySelector('.seg.active') as HTMLElement | null;
+		const value = (active?.getAttribute('data-value') as any) || 'wifi';
 		await ensureTransportConnected();
-		const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: (checked?.value as any) || 'wifi' });
+		const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: value });
 		msg && (msg.textContent = ok ? 'Saved. Restart device.' : 'Failed');
 		if (ok) await refresh();
 	};
@@ -174,68 +188,88 @@ function initDeviceModePanel() {
 function initLedPanel() {
 	const panel = document.getElementById('tool-pwm'); if (!panel) return;
 	panel.innerHTML = `
-		<div class="row">
-			<label class="field">Duty (0-100): <input type="number" id="ledDutyInput" min="0" max="100" value="0" style="width:80px;" /></label>
-			<input class="btn btn-primary" type="button" id="ledReadBtn" value="Read" />
-			<input class="btn btn-secondary" type="button" id="ledApplyBtn" value="Apply" />
+	<div class="row current-line"><span class="small muted">Current:</span><span class="v" id="ledDutyCur">—</span></div>
+	<div class="row mt-4 small muted" id="ledCurRow" style="opacity:.9;">Current draw: <span id="ledCurMa">—</span></div>
+	<div class="row mt-24">
+			<label class="field">Duty:&nbsp;<input type="range" id="ledDutySlider" min="0" max="100" value="0" class="slider" />
+				<input type="number" id="ledDutyInput" min="0" max="100" value="0" style="width:80px;" />%</label>
 		</div>
-		<div class="row mt-8"><span id="ledMsg" class="muted"></span></div>
+		<div class="row mt-8 small muted">Adjust LED duty cycle; values auto-apply (debounced).</div>
 	`;
 	const dutyInput = document.getElementById('ledDutyInput') as HTMLInputElement | null;
-	const readBtn = document.getElementById('ledReadBtn') as HTMLButtonElement | null;
-	const applyBtn = document.getElementById('ledApplyBtn') as HTMLButtonElement | null;
-	const msg = document.getElementById('ledMsg');
-	// No explicit start button; we'll auto-start on tab open
+	const slider = document.getElementById('ledDutySlider') as HTMLInputElement | null;
+	const dutyCur = document.getElementById('ledDutyCur') as HTMLElement | null;
+	const curMaEl = document.getElementById('ledCurMa') as HTMLElement | null;
+	let currentDutyApplied: number = 0;
+	let latestUserValue: number = 0;
+	let applyTimer: any = null;
+	let applying = false;
 	async function readAll() {
-		if (!(window as any).isConnected) return; msg && (msg.textContent = 'Reading…');
+		if (!(window as any).isConnected) { dutyCur && (dutyCur.textContent = '—'); curMaEl && (curMaEl.textContent = '—'); return; }
+		dutyCur && (dutyCur.textContent = '…');
 		await ensureTransportConnected();
 		const duty = await sendAndExtract(state.transport!, 'get_led_duty_cycle');
 		const cur = await sendAndExtract(state.transport!, 'get_led_current');
-		if (typeof duty === 'number' && dutyInput) dutyInput.value = String(duty);
-		msg && (msg.textContent = `Duty: ${duty ?? '-'}%  Current: ${cur ?? '-'} mA`);
+		if (typeof duty === 'number') {
+			currentDutyApplied = duty;
+			latestUserValue = duty;
+			if (dutyInput) dutyInput.value = String(duty);
+			if (slider) slider.value = String(duty);
+			if (dutyCur) dutyCur.textContent = `${duty}%`;
+		} else {
+			if (dutyCur) dutyCur.textContent = '—';
+		}
+		if (curMaEl) curMaEl.textContent = `${cur ?? '—'} mA`;
 	}
-	readBtn && (readBtn.onclick = readAll);
-	applyBtn && (applyBtn.onclick = async () => {
-		const val = parseInt(dutyInput?.value || '0', 10);
-		msg && (msg.textContent = 'Setting…');
-		await ensureTransportConnected();
-		await sendAndExtract(state.transport!, 'set_led_duty_cycle', { dutyCycle: val });
-		await readAll();
-	});
+	function syncInputs(from: 'slider' | 'input') {
+		const v = from === 'slider' ? parseInt(slider?.value || '0',10) : parseInt(dutyInput?.value || '0',10);
+		if (slider && from !== 'slider') slider.value = String(v);
+		if (dutyInput && from !== 'input') dutyInput.value = String(v);
+		latestUserValue = v;
+		scheduleApply();
+	}
+	slider && slider.addEventListener('input', () => syncInputs('slider'));
+	dutyInput && dutyInput.addEventListener('input', () => syncInputs('input'));
+	function scheduleApply() {
+		// If change >= 10% from last applied, apply immediately; else debounce 1s
+		const diff = Math.abs(latestUserValue - (currentDutyApplied ?? 0));
+		if (diff >= 10) { clearTimer(); void applyNow(); return; }
+		clearTimer();
+		applyTimer = setTimeout(() => { void applyNow(); }, 1000);
+	}
+	function clearTimer() { if (applyTimer) { try { clearTimeout(applyTimer); } catch {} applyTimer = null; } }
+	async function applyNow() {
+		if (applying) return; applying = true; try {
+			const val = parseInt(String(latestUserValue || 0), 10);
+			// Avoid redundant set
+			if (Math.abs(val - (currentDutyApplied ?? 0)) < 1) return;
+			await ensureTransportConnected();
+			await sendAndExtract(state.transport!, 'set_led_duty_cycle', { dutyCycle: val });
+			currentDutyApplied = val;
+			if (dutyCur) dutyCur.textContent = `${val}%`;
+			// Refresh current draw after apply
+			try {
+				const cur = await sendAndExtract(state.transport!, 'get_led_current');
+				if (curMaEl) curMaEl.textContent = `${cur ?? '—'} mA`;
+			} catch {}
+		} finally { applying = false; }
+	}
 	const tab = document.querySelector('#toolTabs .subtab[data-target="tool-pwm"]');
-	tab?.addEventListener('click', async () => {
-		await readAll();
-	});
+	tab?.addEventListener('click', async () => { await readAll(); });
+	readAll();
 }
 
-function initStreamingPanel() {
-	const panel = document.getElementById('tool-stream'); if (!panel) return;
-	panel.innerHTML = `
-		<div class="row">
-			<input class="btn btn-primary" type="button" id="startStreamBtn" value="Start streaming" />
-		</div>
-		<div class="row mt-8"><span id="streamMsg" class="muted"></span></div>
-	`;
-	const btn = document.getElementById('startStreamBtn') as HTMLButtonElement | null;
-	const msg = document.getElementById('streamMsg');
-	btn && (btn.onclick = async () => {
-		msg && (msg.textContent = 'Starting…'); await ensureTransportConnected();
-		const ok = await sendAndExtract(state.transport!, 'start_streaming');
-		msg && (msg.textContent = ok ? 'Started. Switch to appropriate mode if needed.' : 'Failed');
-	});
-}
+// Streaming tab removed
 
 function initLogsPanel() {
 	const panel = document.getElementById('tool-logs'); if (!panel) return;
 	panel.innerHTML = `
 		<div class="row">
-			<input class="btn btn-primary" type="button" id="logsStartBtn" value="Start log monitor" />
-			<input class="btn btn-secondary" type="button" id="logsStopBtn" value="Stop" disabled />
+			<input class="btn btn-secondary" type="button" id="logsToggleBtn" value="Start monitoring" />
 		</div>
-		<div class="row mt-8"><pre id="logsOutput" class="small" style="max-height:200px; overflow:auto; background:#0a0f18; padding:8px; border:1px solid var(--border); border-radius:8px;"></pre></div>
+		<div class="row mt-8"><pre id="logsOutput" class="small" style="max-height:220px; overflow:auto; background:#0a0f18; padding:8px; border:1px solid var(--border); border-radius:8px;"></pre></div>
 	`;
-	const startBtn = document.getElementById('logsStartBtn') as HTMLButtonElement | null;
-	const stopBtn = document.getElementById('logsStopBtn') as HTMLButtonElement | null;
+	const toggleBtn = document.getElementById('logsToggleBtn') as HTMLButtonElement | null;
 	const out = document.getElementById('logsOutput') as HTMLElement | null;
 		let reading = false;
 	const dec = new TextDecoder();
@@ -253,51 +287,65 @@ function initLogsPanel() {
 			}
 		} catch {}
 	}
-	startBtn && (startBtn.onclick = async () => { if (reading) return; reading = true; startBtn.disabled = true; stopBtn && (stopBtn.disabled = false); loop(); });
-	stopBtn && (stopBtn.onclick = () => { reading = false; startBtn && (startBtn.disabled = false); stopBtn && (stopBtn.disabled = true); });
+	toggleBtn && (toggleBtn.onclick = async () => {
+		if (!reading) { reading = true; toggleBtn.value = 'Stop'; await loop(); }
+		else { reading = false; toggleBtn.value = 'Start monitoring'; }
+	});
 }
 
 function initSummaryPanel() {
 	const panel = document.getElementById('tool-summary'); if (!panel) return;
 	panel.innerHTML = `
-		<div class="row">
-			<strong>Device summary</strong>
+		<div class="row"><strong>Device summary</strong></div>
+		<div class="kv-list" id="summaryList">
+			<div class="kv"><div class="k">Serial</div><div class="v" id="sumSerial">—</div></div>
+			<div class="kv"><div class="k">Name</div><div class="v" id="sumName">—</div></div>
+			<div class="kv"><div class="k">Device</div><div class="v" id="sumDevice">—</div></div>
+			<div class="kv"><div class="k">Version</div><div class="v" id="sumVersion">—</div></div>
+			<div class="kv"><div class="k">Mode</div><div class="v" id="sumMode">—</div></div>
+			<div class="kv"><div class="k">WiFi</div><div class="v" id="sumWifi">—</div></div>
+			<div class="kv"><div class="k">LED Duty</div><div class="v" id="sumDuty">—</div></div>
+			<div class="kv"><div class="k">LED Current</div><div class="v" id="sumCurrent">—</div></div>
 		</div>
-		<div class="row mt-8"><pre id="summaryOutput" class="small" style="background:#0a0f18; padding:12px; border:1px solid var(--border); border-radius:10px; max-height:260px; overflow:auto;"></pre></div>
 	`;
-	const out = document.getElementById('summaryOutput') as HTMLElement | null;
+	const sumSerial = document.getElementById('sumSerial');
+	const sumName = document.getElementById('sumName');
+	const sumDevice = document.getElementById('sumDevice');
+	const sumVersion = document.getElementById('sumVersion');
+	const sumMode = document.getElementById('sumMode');
+	const sumWifi = document.getElementById('sumWifi');
+	const sumDuty = document.getElementById('sumDuty');
+	const sumCurrent = document.getElementById('sumCurrent');
 	async function refreshSummary() {
-		if (!out) return; out.textContent = 'Collecting...\n';
+		if (!(window as any).isConnected) return;
 		await ensureTransportConnected();
-		const lines: string[] = [];
 		try {
 			const serialInfo = await sendAndExtract(state.transport!, 'get_serial');
-			if (serialInfo?.serial) lines.push(`Serial: ${serialInfo.serial}`);
+			if (serialInfo?.serial && sumSerial) sumSerial.textContent = String(serialInfo.serial);
 		} catch {}
 		try {
 			const name = await sendAndExtract(state.transport!, 'get_mdns_name');
-			lines.push(`Name: ${name || '-'}`);
+			if (sumName) sumName.textContent = String(name || '—');
 		} catch {}
 		try {
 			const who = await sendAndExtract(state.transport!, 'get_who_am_i');
-			if (who?.who_am_i) lines.push(`Device: ${who.who_am_i}`);
-			if (who?.version) lines.push(`Version: ${who.version}`);
+			if (who?.who_am_i && sumDevice) sumDevice.textContent = String(who.who_am_i);
+			if (who?.version && sumVersion) sumVersion.textContent = String(who.version);
 		} catch {}
 		try {
 			const mode = await sendAndExtract(state.transport!, 'get_device_mode');
-			lines.push(`Mode: ${mode}`);
+			if (sumMode) sumMode.textContent = String(mode);
 		} catch {}
 		try {
 			const wifi = await sendAndExtract(state.transport!, 'get_wifi_status');
-			if (wifi && typeof wifi === 'object') lines.push(`WiFi: ${wifi.status} IP:${wifi.ip_address || '-'}`);
+			if (wifi && typeof wifi === 'object' && sumWifi) sumWifi.textContent = `${wifi.status}${wifi.ip_address ? ' · ' + wifi.ip_address : ''}`;
 		} catch {}
 		try {
 			const duty = await sendAndExtract(state.transport!, 'get_led_duty_cycle');
 			const cur = await sendAndExtract(state.transport!, 'get_led_current');
-			lines.push(`LED Duty: ${duty ?? '-'}%`);
-			lines.push(`LED Current: ${cur ?? '-'} mA`);
+			if (sumDuty) sumDuty.textContent = `${duty ?? '—'}%`;
+			if (sumCurrent) sumCurrent.textContent = `${cur ?? '—'} mA`;
 		} catch {}
-		out.textContent = lines.join('\n');
 	}
 	// Expose to index.html subtabs handler to auto-load when switching
 	;(window as any).autoLoadSummary = refreshSummary;
@@ -309,7 +357,6 @@ function initSummaryPanel() {
 initMdnsPanel();
 initDeviceModePanel();
 initLedPanel();
-initStreamingPanel();
 initLogsPanel();
 initSummaryPanel();
 
@@ -322,6 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
 		if (!video || !box) return;
 		const startIfConnected = async () => {
 			if (!(window as any).isConnected) { box.style.display = 'none'; return; }
+			if ((state as any).connectionMode !== 'runtime') { box.style.display = 'none'; if (info) info.textContent = 'UVC preview only in runtime mode.'; return; }
 			const assoc = await findAssociatedUvc();
 			if (!assoc.deviceId) { if (info) info.textContent = 'Keine passende UVC-Kamera gefunden.'; box.style.display = 'none'; return; }
 			box.style.display = 'flex'; if (info) info.textContent = `UVC: ${assoc.label || 'camera'}`;

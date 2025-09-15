@@ -68,6 +68,11 @@ function scoreLabel(label: string, targetName: string, productHint?: string): nu
 
 export async function findAssociatedUvc(): Promise<{ deviceId: string | null; label?: string }> {
   try {
+    // Only supported in runtime (CDC JSON) mode
+    if ((state as any).connectionMode !== 'runtime') {
+      matchedVideoDeviceId = null;
+      return { deviceId: null };
+    }
     await ensureDeviceLabels();
     const devices = await navigator.mediaDevices.enumerateDevices();
     const vids = devices.filter((d) => d.kind === "videoinput");
@@ -107,6 +112,11 @@ export async function findAssociatedUvc(): Promise<{ deviceId: string | null; la
 
 export async function startUvcPreview(video: HTMLVideoElement, info?: HTMLElement): Promise<boolean> {
   try {
+    // Do not start preview unless in runtime mode
+    if ((state as any).connectionMode !== 'runtime') {
+      if (info) info.textContent = 'UVC preview only in runtime mode.';
+      return false;
+    }
     if (!matchedVideoDeviceId) {
       const assoc = await findAssociatedUvc();
       matchedVideoDeviceId = assoc.deviceId;
