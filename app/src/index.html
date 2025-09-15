@@ -32,6 +32,10 @@
               <input class="btn btn-primary" type="button" id="connectButton" value="Connect" />
               <input class="btn btn-warning" type="button" id="disconnectButton" value="Disconnect" />
             </div>
+            <div id="uvcPreviewBox" class="row mt-12" style="display:none; align-items:flex-start; gap:12px;">
+              <video id="uvcPreviewVideo" width="320" height="240" style="border:1px solid var(--border); border-radius:10px; display:block; background:transparent;" playsinline muted></video>
+              <div class="small muted" id="uvcPreviewInfo">UVC preview wird automatisch gestartet, wenn verfügbar.</div>
+            </div>
             <details class="advanced mt-8">
               <summary>Advanced</summary>
               <div class="advanced-body">
@@ -211,7 +215,7 @@
               <div id="tool-mode" class="tool-panel" role="tabpanel" style="display:none;"></div>
               <div id="tool-pwm" class="tool-panel" role="tabpanel" style="display:none;"></div>
               <div id="tool-logs" class="tool-panel" role="tabpanel" style="display:none;"></div>
-              <div id="tool-summary" class="tool-panel" role="tabpanel" style="display:none;"></div>
+              <div id="tool-summary" class="tool-panel" role="tabpanel" style="display:none"></div>
             </div>
           </div>
         </section>
@@ -281,6 +285,8 @@
         function showPanel(id){
           var panels = Array.from(document.querySelectorAll('.tool-panel'));
           panels.forEach(function(p){ p.style.display = (p.id === id) ? 'block' : 'none'; });
+          // Auto-load content when opening Summary panel
+          if (id === 'tool-summary' && window.autoLoadSummary) { try { window.autoLoadSummary(); } catch(e){} }
         }
         subtabs.forEach(function(tab){
           tab.addEventListener('click', function(){

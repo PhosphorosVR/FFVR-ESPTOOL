@@ -4,6 +4,7 @@ import { el, setTabsEnabled } from "../ui/dom";
 import { updateConnStatusDot, showConnectAlert } from "../ui/alerts";
 import { dbg } from "../ui/debug";
 import { serial as serialPoly } from "web-serial-polyfill";
+import { stopUvcPreview } from "./uvc";
 
 const hasSerial = typeof (navigator as any).serial !== 'undefined';
 const hasUsb = typeof (navigator as any).usb !== 'undefined';
@@ -57,6 +58,14 @@ export async function handlePortDisconnected(reason: string = 'Device disconnect
     }
   } catch {}
   try {
+    // Stop any active UVC preview in the connect card
+    try {
+      const vid = document.getElementById('uvcPreviewVideo') as HTMLVideoElement | null;
+      if (vid) stopUvcPreview(vid);
+    } catch {}
+    // Reset device and transport so next Connect prompts for a port again
+    state.device = null;
+    state.transport = null as any;
     state.isConnected = false;
     (window as any).isConnected = false;
   try { (state as any).connectionMode = null; } catch {}
@@ -69,6 +78,8 @@ export async function handlePortDisconnected(reason: string = 'Device disconnect
   const btnTrace = el.traceButton(); if (btnTrace) btnTrace.style.display = 'none';
   const btnErase = el.eraseButton(); if (btnErase) btnErase.style.display = 'none';
   const files = el.filesDiv(); if (files) files.style.display = 'none';
+    // Hide UVC preview box if present
+    try { const box = document.getElementById('uvcPreviewBox'); if (box) (box as HTMLElement).style.display = 'none'; } catch {}
     try {
       setTabsEnabled(false);
       const tabs = el.tabs();

@@ -35,9 +35,9 @@ export function wireConnection(term: any) {
       hideConnectAlert();
       updateConnStatusDot(false);
       state.isConsoleClosed = true;
-      if (state.device === null) {
-        state.device = await serialLib.requestPort({});
-      }
+  // Always prompt for a port on connect to allow choosing a different COM after disconnect
+  state.device = null;
+  state.device = await serialLib.requestPort({});
       state.lastBaud = parseInt((baudSel as any).value) || 115200;
       // Always create a fresh transport (raw). Boot attempt will use it.
       state.transport = new Transport(state.device, true);
@@ -112,6 +112,8 @@ export function wireConnection(term: any) {
       updateConnStatusDot(true);
       hideConnectAlert();
       applyTabMode(state.connectionMode);
+  // Notify UI of connection for UVC preview, etc.
+  try { document.dispatchEvent(new CustomEvent('ffvr-connected')); } catch {}
       // Select initial tab depending on mode
       if (state.connectionMode === 'boot') {
         const tabProgram = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;

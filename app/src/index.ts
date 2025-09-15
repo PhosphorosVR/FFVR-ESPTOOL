@@ -10,7 +10,7 @@ import { wireConnection } from "./features/connection";
 import { wireWifiButtons } from "./features/wifi";
 import { ensureTransportConnected } from "./core/serial";
 import { sendAndExtract } from "./core/jsonClient";
-import { findAssociatedUvc, startUvcPreview, stopUvcPreview } from "./core/uvc";
+import { findAssociatedUvc, startUvcPreview } from "./core/uvc";
 import { addRow, performFlash } from "./features/flashing";
 
 // Initialize debug panel visibility and prior flash success banner
@@ -180,26 +180,11 @@ function initLedPanel() {
 			<input class="btn btn-secondary" type="button" id="ledApplyBtn" value="Apply" />
 		</div>
 		<div class="row mt-8"><span id="ledMsg" class="muted"></span></div>
-		<hr class="mt-16" />
-		<div class="row mt-12">
-			<strong>UVC Preview</strong>
-		</div>
-		<div class="row mt-8" id="uvcControls" style="align-items:center; gap:8px;">
-			<span class="muted" id="uvcInfo"></span>
-			<span class="spacer" style="flex:1 1 auto;"></span>
-			<input class="btn btn-secondary" type="button" id="uvcStopBtn" value="Stop" disabled />
-		</div>
-		<div class="row mt-8">
-			<video id="uvcVideo" width="320" height="240" style="border:1px solid var(--border); border-radius:6px; display:block; background:transparent;" playsinline muted></video>
-		</div>
 	`;
 	const dutyInput = document.getElementById('ledDutyInput') as HTMLInputElement | null;
 	const readBtn = document.getElementById('ledReadBtn') as HTMLButtonElement | null;
 	const applyBtn = document.getElementById('ledApplyBtn') as HTMLButtonElement | null;
 	const msg = document.getElementById('ledMsg');
-	const stopBtn = document.getElementById('uvcStopBtn') as HTMLButtonElement | null;
-	const info = document.getElementById('uvcInfo') as HTMLElement | null;
-	const video = document.getElementById('uvcVideo') as HTMLVideoElement | null;
 	// No explicit start button; we'll auto-start on tab open
 	async function readAll() {
 		if (!(window as any).isConnected) return; msg && (msg.textContent = 'Reading…');
@@ -217,22 +202,9 @@ function initLedPanel() {
 		await sendAndExtract(state.transport!, 'set_led_duty_cycle', { dutyCycle: val });
 		await readAll();
 	});
-	stopBtn && (stopBtn.onclick = () => { if (video) { stopUvcPreview(video); } if (stopBtn) stopBtn.disabled = true; });
 	const tab = document.querySelector('#toolTabs .subtab[data-target="tool-pwm"]');
 	tab?.addEventListener('click', async () => {
 		await readAll();
-		try {
-			if (video) {
-				const assoc = await findAssociatedUvc();
-				if (info) info.textContent = assoc.deviceId ? `Found UVC: ${assoc.label || 'camera'} (opening…)` : 'UVC device not found';
-				if (assoc.deviceId) {
-					const ok = await startUvcPreview(video, info || undefined);
-					if (stopBtn) stopBtn.disabled = !ok;
-				} else {
-					if (stopBtn) stopBtn.disabled = true;
-				}
-			}
-		} catch {}
 	});
 }
 
@@ -289,32 +261,49 @@ function initSummaryPanel() {
 	const panel = document.getElementById('tool-summary'); if (!panel) return;
 	panel.innerHTML = `
 		<div class="row">
-			<input class="btn btn-primary" type="button" id="summaryRefreshBtn" value="Collect summary" />
+			<strong>Device summary</strong>
 		</div>
-		<div class="row mt-8"><pre id="summaryOutput" style="background:#0a0f18; padding:8px; border:1px solid var(--border); border-radius:8px; max-height:240px; overflow:auto;"></pre></div>
+		<div class="row mt-8"><pre id="summaryOutput" class="small" style="background:#0a0f18; padding:12px; border:1px solid var(--border); border-radius:10px; max-height:260px; overflow:auto;"></pre></div>
 	`;
-	const btn = document.getElementById('summaryRefreshBtn') as HTMLButtonElement | null;
 	const out = document.getElementById('summaryOutput') as HTMLElement | null;
-	btn && (btn.onclick = async () => {
-		if (!out) return; out.textContent = 'Collecting...\n'; await ensureTransportConnected();
+	async function refreshSummary() {
+		if (!out) return; out.textContent = 'Collecting...\n';
+		await ensureTransportConnected();
 		const lines: string[] = [];
-		const serialInfo = await sendAndExtract(state.transport!, 'get_serial');
-		if (serialInfo.serial) lines.push(`Serial: ${serialInfo.serial}`);
-		const name = await sendAndExtract(state.transport!, 'get_mdns_name');
-		lines.push(`Name: ${name || '-'}`);
-		const who = await sendAndExtract(state.transport!, 'get_who_am_i');
-		if (who.who_am_i) lines.push(`Device: ${who.who_am_i}`);
-		if (who.version) lines.push(`Version: ${who.version}`);
-		const mode = await sendAndExtract(state.transport!, 'get_device_mode');
-		lines.push(`Mode: ${mode}`);
-		const wifi = await sendAndExtract(state.transport!, 'get_wifi_status');
-		if (wifi && typeof wifi === 'object') lines.push(`WiFi: ${wifi.status} IP:${wifi.ip_address || '-'}`);
-		const duty = await sendAndExtract(state.transport!, 'get_led_duty_cycle');
-		const cur = await sendAndExtract(state.transport!, 'get_led_current');
-		lines.push(`LED Duty: ${duty ?? '-'}%`);
-		lines.push(`LED Current: ${cur ?? '-'} mA`);
+		try {
+			const serialInfo = await sendAndExtract(state.transport!, 'get_serial');
+			if (serialInfo?.serial) lines.push(`Serial: ${serialInfo.serial}`);
+		} catch {}
+		try {
+			const name = await sendAndExtract(state.transport!, 'get_mdns_name');
+			lines.push(`Name: ${name || '-'}`);
+		} catch {}
+		try {
+			const who = await sendAndExtract(state.transport!, 'get_who_am_i');
+			if (who?.who_am_i) lines.push(`Device: ${who.who_am_i}`);
+			if (who?.version) lines.push(`Version: ${who.version}`);
+		} catch {}
+		try {
+			const mode = await sendAndExtract(state.transport!, 'get_device_mode');
+			lines.push(`Mode: ${mode}`);
+		} catch {}
+		try {
+			const wifi = await sendAndExtract(state.transport!, 'get_wifi_status');
+			if (wifi && typeof wifi === 'object') lines.push(`WiFi: ${wifi.status} IP:${wifi.ip_address || '-'}`);
+		} catch {}
+		try {
+			const duty = await sendAndExtract(state.transport!, 'get_led_duty_cycle');
+			const cur = await sendAndExtract(state.transport!, 'get_led_current');
+			lines.push(`LED Duty: ${duty ?? '-'}%`);
+			lines.push(`LED Current: ${cur ?? '-'} mA`);
+		} catch {}
 		out.textContent = lines.join('\n');
-	});
+	}
+	// Expose to index.html subtabs handler to auto-load when switching
+	;(window as any).autoLoadSummary = refreshSummary;
+	// Also refresh immediately if Summary tab is already active
+	const isActive = (document.querySelector('#toolTabs .subtab.active') as HTMLElement | null)?.dataset.target === 'tool-summary';
+	if (isActive) refreshSummary();
 }
 
 initMdnsPanel();
@@ -323,4 +312,25 @@ initLedPanel();
 initStreamingPanel();
 initLogsPanel();
 initSummaryPanel();
+
+// Start/stop UVC preview in the main connect block when connection state changes
+document.addEventListener('DOMContentLoaded', () => {
+	try {
+		const video = document.getElementById('uvcPreviewVideo') as HTMLVideoElement | null;
+		const box = document.getElementById('uvcPreviewBox') as HTMLElement | null;
+		const info = document.getElementById('uvcPreviewInfo') as HTMLElement | null;
+		if (!video || !box) return;
+		const startIfConnected = async () => {
+			if (!(window as any).isConnected) { box.style.display = 'none'; return; }
+			const assoc = await findAssociatedUvc();
+			if (!assoc.deviceId) { if (info) info.textContent = 'Keine passende UVC-Kamera gefunden.'; box.style.display = 'none'; return; }
+			box.style.display = 'flex'; if (info) info.textContent = `UVC: ${assoc.label || 'camera'}`;
+			await startUvcPreview(video, info || undefined);
+		};
+		// When tabs enabled after connect, try starting preview
+		document.addEventListener('ffvr-connected', startIfConnected as any);
+		// Fallback: attempt shortly after load and after connect button hides
+		setTimeout(startIfConnected, 300);
+	} catch {}
+});
 

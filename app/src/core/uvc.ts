@@ -5,7 +5,7 @@ import { sendAndExtract } from "./jsonClient";
 let currentStream: MediaStream | null = null;
 let matchedVideoDeviceId: string | null = null;
 
-export async function ensureDeviceLabels(): Promise<void> {
+export async function ensureDeviceLabels(): Promise<boolean> {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const hasLabels = devices.some((d) => d.kind === "videoinput" && d.label);
@@ -17,8 +17,53 @@ export async function ensureDeviceLabels(): Promise<void> {
           t.stop();
         } catch {}
       });
+      return true;
     }
-  } catch {}
+    return true;
+  } catch {
+    // Permission may be blocked or no camera available
+    return false;
+  }
+}
+
+function norm(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function scoreLabel(label: string, targetName: string, productHint?: string): number {
+  const L = norm(label);
+  const T = norm(targetName);
+  const P = productHint ? norm(productHint) : "";
+  let score = 0;
+  if (!label) return -999;
+  if (T && L === T) score += 120;
+  if (T && L.startsWith(T)) score += 80;
+  if (T && L.includes(T)) score += 50;
+  // Prefer same family keywords
+  const hasEyeL = /\beye\b/.test(L);
+  const hasFaceL = /\bface\b/.test(L) || /fdace/.test(L);
+  const hasEyeT = /\beye\b/.test(T);
+  const hasFaceT = /\bface\b/.test(T) || /fdace/.test(T);
+  if (hasEyeL && hasEyeT) score += 25;
+  if (hasFaceL && hasFaceT) score += 25;
+  if (hasEyeT && hasFaceL) score -= 40; // avoid face when target is eye
+  if (hasFaceT && hasEyeL) score -= 20;
+  // Sidedness hints (R/L)
+  const wantsR = /\br\b|\bright\b/.test(T);
+  const wantsL = /\bl\b|\bleft\b/.test(T);
+  const hasR = /\br\b|\bright\b/.test(L);
+  const hasL = /\bl\b|\bleft\b/.test(L);
+  if (wantsR && hasR) score += 20;
+  if (wantsL && hasL) score += 20;
+  if (wantsR && hasL) score -= 15;
+  if (wantsL && hasR) score -= 15;
+  // Product hint helps break ties
+  if (P) {
+    if (L.includes(P)) score += 10;
+  }
+  // Prefer labels that look like the brand
+  if (/ffvr|openiris/.test(L)) score += 5;
+  return score;
 }
 
 export async function findAssociatedUvc(): Promise<{ deviceId: string | null; label?: string }> {
@@ -29,22 +74,31 @@ export async function findAssociatedUvc(): Promise<{ deviceId: string | null; la
     // Prefer matching by advertised mdns/uvc name
     await ensureTransportConnected();
     const name = await sendAndExtract(state.transport!, "get_mdns_name");
-    const targetName = (typeof name === "string" ? name : "").toLowerCase().trim();
-    let match = vids.find((v) => (v.label || "").toLowerCase().includes(targetName) && v.deviceId);
-    if (!match && targetName) {
-      match = vids.find((v) => (v.label || "").toLowerCase().includes(targetName));
+    const targetName = typeof name === "string" ? name : "";
+    let productHint = "";
+    try {
+      const dev: any = (state.transport as any)?.device;
+      const usb = dev?.device || dev?.device_ || dev?.usbDevice || dev?._device || dev?.port_?.device;
+      productHint = usb?.productName || "";
+    } catch {}
+
+    // Rank all candidates and pick the highest scoring one
+    let best = { score: -9999, dev: null as MediaDeviceInfo | null };
+    for (const v of vids) {
+      const s = scoreLabel(v.label || "", targetName, productHint);
+      if (s > best.score) best = { score: s, dev: v };
     }
-    // Fallback: try product/manufacturer from connected USB if available (best effort)
-    if (!match) {
-      try {
-        const dev: any = (state.transport as any)?.device;
-        const usb = dev?.device || dev?.device_ || dev?.usbDevice || dev?._device || dev?.port_?.device;
-        const prod = (usb?.productName || "").toLowerCase();
-        if (prod) match = vids.find((v) => (v.label || "").toLowerCase().includes(prod));
-      } catch {}
+
+    // If score is weak (<=0), try a second pass using only product hint
+    if ((!best.dev || best.score <= 0) && productHint) {
+      for (const v of vids) {
+        const L = norm(v.label || "");
+        if (L.includes(norm(productHint))) { best = { score: 1, dev: v }; break; }
+      }
     }
-    matchedVideoDeviceId = match?.deviceId || null;
-    return { deviceId: matchedVideoDeviceId, label: match?.label };
+
+    matchedVideoDeviceId = best.dev?.deviceId || null;
+    return { deviceId: matchedVideoDeviceId, label: best.dev?.label };
   } catch {
     matchedVideoDeviceId = null;
     return { deviceId: null };
@@ -59,7 +113,17 @@ export async function startUvcPreview(video: HTMLVideoElement, info?: HTMLElemen
       if (info) info.textContent = assoc.deviceId ? `Found UVC: ${assoc.label || "camera"} (ready)` : "UVC device not found";
       if (!matchedVideoDeviceId) return false;
     }
-    if (currentStream) return true; // already running
+    // If already running but against the wrong device (e.g., labels unlocked later), switch.
+    if (currentStream) {
+      const tracks = currentStream.getVideoTracks();
+      const settings = tracks[0]?.getSettings?.();
+      const currentDeviceId = (settings && (settings as any).deviceId) || null;
+      if (currentDeviceId && matchedVideoDeviceId && currentDeviceId !== matchedVideoDeviceId) {
+        try { stopUvcPreview(video); } catch {}
+      } else {
+        return true; // already on the right device
+      }
+    }
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { deviceId: { exact: matchedVideoDeviceId } },
       audio: false,
