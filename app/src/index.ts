@@ -290,9 +290,20 @@ function initDeviceModePanel() {
 	});
 	// When Tools main tab is opened and Mode subtab is the active one, refresh
 	const toolsTab = document.querySelector('#tabs .tab[data-target="tools"]') as HTMLElement | null;
+	let firstToolsOpen = true;
 	toolsTab?.addEventListener('click', () => {
 		// Make sure a visible subtab is active
-		ensureVisibleToolSubtabActive();
+		if (firstToolsOpen) {
+			firstToolsOpen = false;
+			const modeTab = document.querySelector('#toolTabs .subtab[data-target="tool-mode"]') as HTMLElement | null;
+			if (modeTab && modeTab.style.display !== 'none') {
+				modeTab.click();
+			} else {
+				ensureVisibleToolSubtabActive();
+			}
+		} else {
+			ensureVisibleToolSubtabActive();
+		}
 		const activeSub = (document.querySelector('#toolTabs .subtab.active') as HTMLElement | null)?.dataset.target;
 		if (activeSub === 'tool-mode') { void refresh(); }
 	});
@@ -553,13 +564,13 @@ function initUpdatePanel() {
 		}
 		// Always compute UI from known connection mode first
 		const isBoot = (state as any).connectionMode === 'boot';
-		if (lbl) lbl.textContent = isBoot ? 'Boot mode' : 'Not boot mode';
+		if (lbl) lbl.textContent = isBoot ? 'Boot mode' : 'Runtime mode';
 		if (isBoot) {
 			hintRuntime && (hintRuntime.style.display = 'none');
 			actRuntime && (actRuntime.style.display = 'none');
 			actBoot && (actBoot.style.display = 'flex');
 		} else {
-			hintRuntime && (hintRuntime.style.display = 'flex');
+			if (hintRuntime) { hintRuntime.style.display = 'flex'; hintRuntime.textContent = 'Switch to boot mode to flash firmware.'; }
 			actRuntime && (actRuntime.style.display = 'flex');
 			actBoot && (actBoot.style.display = 'none');
 		}

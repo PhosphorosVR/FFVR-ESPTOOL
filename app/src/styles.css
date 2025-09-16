@@ -176,6 +176,13 @@ th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 /* WiFi: more space above the table for readability */
 #wifiTable { margin-top: 20px; }
 
+/* Update panel refinements */
+#updateModeRow { margin-top: 4px; }
+#updateHintRuntime { margin-top: 18px !important; font-size: 12px; font-weight: 400; opacity: 0.85; }
+#updateActionsRuntime { margin-top: 20px !important; }
+#updateActionsBoot { margin-top: 24px !important; }
+#updateModeLabel { font-weight: 600; }
+
 /* Segmented control */
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: #0f1520; }
 .segmented .seg { appearance: none; background: transparent; border: none; color: var(--muted); padding: 8px 14px; cursor: pointer; }

@@ -163,7 +163,6 @@
             </div>
             <div class="row mt-12" id="updateActionsRuntime" style="display:none; gap: 8px;">
               <input class="btn btn-secondary" type="button" id="btnSwitchToBoot" value="Switch to boot mode" />
-              <span class="small muted">Switches device mode to “Setup” and restarts automatically.</span>
             </div>
             <div class="row mt-12" id="updateActionsBoot" style="display:none;">
               <input class="btn btn-primary" type="button" id="btnGoToFlash" value="Continue to flashing" />
@@ -260,11 +259,11 @@
     <!-- Full-screen overlay prompting user to power-cycle the device -->
     <div id="powerCycleOverlay" style="display:none;" class="overlay">
       <div class="overlay-content">
-        <h3>Restart device (Boot mode)</h3>
+        <h3>Power cycle device</h3>
         <p>
-          Please power‑cycle your device (unplug or switch off, then reconnect) to enter boot mode.
+          Unplug (or switch off) the device, then reconnect it to enter boot mode. After you have done this, confirm below.
         </p>
-        <button id="powerCycleConfirm" class="btn btn-primary" type="button">Confirm</button>
+        <button id="powerCycleConfirm" class="btn btn-primary" type="button">Yes, I power‑cycled</button>
       </div>
     </div>
     <!-- Global busy indicator (hidden by default) -->
