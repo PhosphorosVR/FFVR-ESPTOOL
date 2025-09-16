@@ -58,6 +58,7 @@ declare class Transport {
     private lastTraceTime;
     private reader;
     private buffer;
+    private readerInitInProgress;
     constructor(device: SerialPort, tracing?: boolean, enableSlipReader?: boolean);
     /**
      * Request the serial device vendor ID and Product ID as string.
@@ -140,6 +141,13 @@ declare class Transport {
      * @param {typeof import("w3c-web-serial").SerialOptions} serialOptions Serial Options for WebUSB SerialPort class.
      */
     connect(baud?: number, serialOptions?: SerialOptions): Promise<void>;
+    /**
+     * Ensure a single reader instance is acquired. Avoids race where multiple callers call getReader()
+     * simultaneously (e.g. console streaming + flashing). If a reader init is in progress, wait for it.
+     */
+    private ensureReader;
+    /** Aggressiver Komplett-Reset des Ports (Close + Re-Open) um alle Locks zu lösen */
+    forceReopen(baud?: number, serialOptions?: SerialOptions): Promise<void>;
     sleep(ms: number): Promise<unknown>;
     /**
      * Wait for a given timeout ms for serial device unlock.

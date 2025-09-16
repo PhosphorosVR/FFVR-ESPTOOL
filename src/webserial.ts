@@ -63,6 +63,7 @@ class Transport {
   private lastTraceTime = Date.now();
   private reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   private buffer: Uint8Array = new Uint8Array(0);
+  private readerInitInProgress: Promise<void> | null = null;
 
   constructor(public device: SerialPort, public tracing = false, enableSlipReader = true) {
     this.slipReaderEnabled = enableSlipReader;
@@ -244,17 +245,39 @@ class Transport {
   }
 
   async flushInput() {
-    if (this.reader && !(await this.reader.closed)) {
-      await this.reader.cancel();
-      this.reader.releaseLock();
-      this.reader = this.device.readable?.getReader();
+    // Cancel current reader to drop any pending unread data and reset internal buffer/state.
+    try {
+      if (this.reader) {
+        // closed is a promise; we just attempt cancel regardless
+        try {
+          await this.reader.cancel();
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          this.reader.releaseLock();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    } catch (e) {
+      console.warn("flushInput cancel error", e);
     }
+    // Clear buffered undecoded bytes to avoid old noise corrupting next SLIP frame.
+    this.buffer = new Uint8Array(0);
+  // Reader wird erst bei Bedarf neu erstellt (lazy) um Race mit parallelen Aufrufern zu minimieren.
+  this.reader = undefined;
   }
 
   async flushOutput() {
     this.buffer = new Uint8Array(0);
-    await this.device.writable?.getWriter().close();
-    this.device.writable?.getWriter().releaseLock();
+    try {
+      if (this.device.writable) {
+        const w = this.device.writable.getWriter();
+        try { await w.close(); } catch (_) { /* ignore */ }
+        try { w.releaseLock(); } catch (_) { /* ignore */ }
+      }
+    } catch (_) { /* ignore */ }
   }
 
   // `inWaiting` returns the count of bytes in the buffer
@@ -292,26 +315,27 @@ class Transport {
    * @yields {Uint8Array} Formatted packet using SLIP escape sequences.
    */
   async *read(timeout: number): AsyncGenerator<Uint8Array> {
-    if (!this.reader) {
-      this.reader = this.device.readable?.getReader();
-    }
+  await this.ensureReader();
 
     let partialPacket: Uint8Array | null = null;
     let isEscaping = false;
     let successfulSlip = false;
+  const startTime = Date.now();
 
     while (true) {
       const waitingBytes = this.inWaiting();
       const readBytes = await this.newRead(waitingBytes > 0 ? waitingBytes : 1, timeout);
 
       if (!readBytes || readBytes.length === 0) {
-        const msg =
-          partialPacket === null
-            ? successfulSlip
-              ? "Serial data stream stopped: Possible serial noise or corruption."
-              : "No serial data received."
-            : `Packet content transfer stopped`;
-        this.trace(msg);
+        // Allow waiting the entire timeout duration before declaring failure (important for long ops like erase)
+        if (Date.now() - startTime < timeout) {
+          await new Promise(r => setTimeout(r, 40));
+          continue;
+        }
+        const msg = partialPacket === null
+          ? (successfulSlip ? "Serial data stream stopped: Possible serial noise or corruption." : "No serial data received.")
+          : "Packet content transfer stopped";
+        this.trace(msg + " (timeout)");
         throw new Error(msg);
       }
 
@@ -324,11 +348,8 @@ class Transport {
           if (byte === this.SLIP_END) {
             partialPacket = new Uint8Array(0); // Start of a new packet
           } else {
-            this.trace(`Read invalid data: ${this.hexConvert(readBytes)}`);
-            const remainingData = await this.newRead(this.inWaiting(), timeout);
-            this.trace(`Remaining data in serial buffer: ${this.hexConvert(remainingData)}`);
-            this.detectPanicHandler(new Uint8Array([...readBytes, ...(remainingData || [])]));
-            throw new Error(`Invalid head of packet (0x${byte.toString(16)}): Possible serial noise or corruption.`);
+            // Treat as noise; skip silently (helps when device prints text/logs before bootloader reply)
+            continue;
           }
         } else if (isEscaping) {
           isEscaping = false;
@@ -363,7 +384,8 @@ class Transport {
    * @yields {Uint8Array} The next number in the Fibonacci sequence.
    */
   async *rawRead(): AsyncGenerator<Uint8Array> {
-    if (!this.reader) return;
+  await this.ensureReader();
+  if (!this.reader) return;
 
     try {
       while (true) {
@@ -422,7 +444,76 @@ class Transport {
       flowControl: serialOptions?.flowControl,
     });
     this.baudrate = baud;
-    this.reader = this.device.readable?.getReader();
+  this.reader = undefined; // frischer Start
+  await this.ensureReader();
+  }
+
+  /**
+   * Ensure a single reader instance is acquired. Avoids race where multiple callers call getReader()
+   * simultaneously (e.g. console streaming + flashing). If a reader init is in progress, wait for it.
+   */
+  private async ensureReader() {
+    if (this.reader) return;
+    if (this.readerInitInProgress) {
+      await this.readerInitInProgress;
+      return;
+    }
+    this.readerInitInProgress = (async () => {
+      const MAX_RETRIES = 8;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        if (!this.device.readable) return;
+        if (!this.device.readable.locked) {
+          try {
+            this.reader = this.device.readable.getReader();
+            return;
+          } catch (e) {
+            console.warn("getReader failed attempt", attempt, e);
+          }
+        } else {
+          // Versuche existierenden Reader zu canceln
+          if (this.reader) {
+            try { await this.reader.cancel(); } catch (_) { /* ignore */ }
+            try { this.reader.releaseLock(); } catch (_) { /* ignore */ }
+            this.reader = undefined;
+          }
+        }
+        await new Promise(r => setTimeout(r, 50 * (attempt + 1))); // Backoff
+      }
+      console.error("ensureReader: konnte nach Wiederholungen keinen Reader erzeugen (locked bleibt). Force reopen empfehlenswert.");
+    })();
+    try {
+      await this.readerInitInProgress;
+    } finally {
+      this.readerInitInProgress = null;
+    }
+  }
+
+  /** Aggressiver Komplett-Reset des Ports (Close + Re-Open) um alle Locks zu lösen */
+  async forceReopen(baud?: number, serialOptions?: SerialOptions) {
+    try {
+      if (this.reader) {
+        try { await this.reader.cancel(); } catch (_) { /* ignore */ }
+        try { this.reader.releaseLock(); } catch (_) { /* ignore */ }
+      }
+    } catch (_) { /* ignore */ }
+    this.reader = undefined;
+    try { await this.device.close(); } catch (_) { /* ignore */ }
+    await new Promise(r => setTimeout(r, 60));
+    try {
+      await this.device.open({
+        baudRate: baud || this.baudrate || 115200,
+        dataBits: serialOptions?.dataBits,
+        stopBits: serialOptions?.stopBits,
+        bufferSize: serialOptions?.bufferSize,
+        parity: serialOptions?.parity,
+        flowControl: serialOptions?.flowControl,
+      });
+      this.baudrate = baud || this.baudrate || 115200;
+    } catch (e) {
+      console.error("forceReopen open error", e);
+    }
+    this.buffer = new Uint8Array(0);
+    await this.ensureReader();
   }
 
   async sleep(ms: number) {

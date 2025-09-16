@@ -1309,6 +1309,83 @@ export class ESPLoader {
    * @param {FlashOptions} options FlashOptions to configure how and what to write into flash.
    */
   async writeFlash(options: FlashOptions) {
+    // Aggressiver Schutz: wenn der Stream noch gelockt scheint (z.B. durch vorherige Console / JSON Session),
+    // erzwinge komplettes Reopen bevor die erste Bootloader-Flash-Operation startet.
+    try {
+      const readable: any = (this.transport as any).device?.readable;
+      if (readable?.locked) {
+        this.debug("Pre-flash forceReopen wegen locked readable stream");
+        // Hard reopen auf gleicher Baudrate
+        // @ts-ignore - Zugriff auf forceReopen ist intentional
+        if ((this.transport as any).forceReopen) {
+          // @ts-ignore
+            await (this.transport as any).forceReopen(this.baudrate, this.serialOptions);
+        }
+      }
+    } catch (e) {
+      this.debug("forceReopen check error: " + (e as Error).message);
+    }
+    // Ensure any prior interactive traffic (e.g. JSON commands) doesn't leave residual bytes
+    // in the SLIP parser which would corrupt the first flashing command. We flush & re-sync once.
+    const preFlashRecover = async (stage: string) => {
+      this.debug(`[RECOVER:${stage}] start`);
+      try {
+        await this.flushInput();
+      } catch (_) {}
+      // Try quick sync; if fails we escalate later
+      try { await this.sync(); } catch (_) { /* ignore */ }
+      if (!this.IS_STUB) {
+        try { await this.runStub(); } catch (_) { /* ignore */ }
+      }
+    };
+    const hardRecover = async (attempt: number) => {
+      this.info(`Recovery attempt ${attempt+1}: full disconnect & reconnect`);
+      try { await this.transport.disconnect(); } catch (_) {}
+      await this._sleep(80);
+      // Force reopen at ROM baud first
+      try { await this.transport.connect(this.romBaudrate, this.serialOptions); } catch (e) { this.debug("Reconnect error " + (e as Error).message);}      
+      // Reconnect implies we lost stub
+      this.IS_STUB = false;
+      // Fresh connect sequence (no_reset to avoid toggling lines if already in bootloader)
+      try {
+        await this.connect("no_reset", 3, true);
+      } catch (e) {
+        this.debug("connect(no_reset) failed " + (e as Error).message);
+        // Try default reset once
+        try { await this.connect("default_reset", 3, true); } catch (_) {}
+      }
+      try { await this.runStub(); } catch (_) {}
+      if (this.romBaudrate !== this.baudrate) {
+        try { await this.changeBaud(); } catch (_) {}
+      }
+      await this.flushInput();
+    };
+    const withRetries = async <T>(label: string, fn: ()=>Promise<T>, beginFn: ()=>Promise<void>) => {
+      const MAX = 4;
+      for (let a=0; a<MAX; a++) {
+        try { return await fn(); } catch (err) {
+          const msg = (err as Error).message || String(err);
+          if (!/No serial data received|Serial data stream stopped/i.test(msg)) throw err;
+          this.info(`${label} lost sync (${msg}) retry ${a+1}/${MAX}`);
+          if (a===0) {
+            await preFlashRecover(label+"-soft");
+          } else if (a===1) {
+            // force reopen
+            // @ts-ignore
+            if ((this.transport as any).forceReopen) { // @ts-ignore
+              await (this.transport as any).forceReopen(this.baudrate, this.serialOptions);
+            }
+            await preFlashRecover(label+"-forceReopen");
+          } else {
+            await hardRecover(a);
+          }
+          // Re-enter flash begin context if needed
+          try { await beginFn(); } catch (_) {}
+        }
+      }
+      throw new ESPError(`${label} failed after retries`);
+    };
+  await preFlashRecover("initial");
     this.debug("EspLoader program");
     if (options.flashSize !== "keep") {
       const flashEnd = this.flashSizeBytes(options.flashSize);
@@ -1319,9 +1396,8 @@ export class ESPLoader {
       }
     }
 
-    if (this.IS_STUB === true && options.eraseAll === true) {
-      await this.eraseFlash();
-    }
+  const doErase = async () => { if (this.IS_STUB && options.eraseAll) await this.eraseFlash(); };
+  await withRetries("erase", doErase, async ()=>{});
     let image: string, address: number;
     for (let i = 0; i < options.fileArray.length; i++) {
       this.debug("Data Length " + options.fileArray[i].data.length);
@@ -1342,14 +1418,21 @@ export class ESPLoader {
         this.debug("Image MD5 " + calcmd5);
       }
       const uncsize = image.length;
-      let blocks: number;
-      if (options.compress) {
-        const uncimage = this.bstrToUi8(image);
-        image = this.ui8ToBstr(deflate(uncimage, { level: 9 }));
-        blocks = await this.flashDeflBegin(uncsize, image.length, address);
-      } else {
-        blocks = await this.flashBegin(uncsize, address);
+      let blocks: number = 0;
+      const enterFlash = async () => {
+        if (options.compress) {
+          const uncimage = this.bstrToUi8(image);
+          image = this.ui8ToBstr(deflate(uncimage, { level: 9 }));
+          blocks = await this.flashDeflBegin(uncsize, image.length, address);
+        } else {
+          blocks = await this.flashBegin(uncsize, address);
+        }
+      };
+      await withRetries("flashBegin", async () => { await enterFlash(); }, async () => {});
+      if (!blocks || blocks <= 0) {
+        throw new ESPError("flashBegin returned zero blocks");
       }
+      const totalBlocks = blocks; // snapshot after successful flashBegin
       let seq = 0;
       let bytesSent = 0;
       const totalBytes = image.length;
@@ -1367,12 +1450,12 @@ export class ESPLoader {
         totalLenUncompressed += chunk.byteLength;
       };
       while (image.length > 0) {
-        this.debug("Write loop " + address + " " + seq + " " + blocks);
+        this.debug("Write loop addr=" + address + " seq=" + seq + " of " + totalBlocks);
         this.info(
           "Writing at 0x" +
             (address + totalLenUncompressed).toString(16) +
             "... (" +
-            Math.floor((100 * (seq + 1)) / blocks) +
+            Math.floor((100 * (seq + 1)) / totalBlocks) +
             "%)",
         );
         const block = this.bstrToUi8(image.slice(0, this.FLASH_WRITE_SIZE));
@@ -1389,7 +1472,8 @@ export class ESPLoader {
             // ROM code writes block to flash before ACKing
             timeout = blockTimeout;
           }
-          await this.flashDeflBlock(block, seq, timeout);
+          const writeBlockRetry = async () => { await this.flashDeflBlock(block, seq, timeout); };
+          await withRetries("block", writeBlockRetry, async ()=>{ /* re-enter handled above */ });
           if (this.IS_STUB) {
             // Stub ACKs when block is received, then writes to flash while receiving the block after it
             timeout = blockTimeout;
