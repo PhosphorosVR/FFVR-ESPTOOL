@@ -1,3 +1,4 @@
+/* eslint-disable no-inner-declarations */
 /* App orchestrator: wires UI controls to modules in core/, ui/, and features/ */
 
 import { state } from "./core/state";
@@ -8,7 +9,7 @@ import { initTerminal, getTerminal, startConsole, stopConsole } from "./ui/termi
 import { loadPrebuiltManifest, wireLegacyToggle } from "./features/firmwareManifest";
 import { wireConnection } from "./features/connection";
 import { wireWifiButtons } from "./features/wifi";
-import { ensureTransportConnected } from "./core/serial";
+import { ensureTransportConnected, handlePortDisconnected } from "./core/serial";
 import { sendAndExtract } from "./core/jsonClient";
 import { findAssociatedUvc, startUvcPreview } from "./core/uvc";
 import { addRow, performFlash } from "./features/flashing";
@@ -108,7 +109,7 @@ if (addFileButton) (addFileButton as any).onclick = () => { const t = el.table()
 // ----- Reworked unified tools panels matching openiris_setup.py capabilities -----
 function initMdnsPanel() {
 	const panel = document.getElementById('tool-mdns'); if (!panel) return;
-    panel.innerHTML = `
+	panel.innerHTML = `
 		<div class="row current-line"><span class="small muted">Current:</span><span class="v" id="mdnsCurrent">—</span></div>
 		<div class="row mt-24">
 			<label class="field">New advertise name:&nbsp;<input type="text" id="mdnsNameInput" placeholder="my-device" /></label>
@@ -121,12 +122,12 @@ function initMdnsPanel() {
 	const currentEl = document.getElementById('mdnsCurrent') as HTMLElement | null;
 	const applyBtn = document.getElementById('mdnsApplyBtn') as HTMLButtonElement | null;
 	const msg = document.getElementById('mdnsMsg') as HTMLElement | null;
-	async function refresh() {
+	const refresh = async () => {
 		if (!(window as any).isConnected) { currentEl && (currentEl.textContent = '—'); return; }
 		currentEl && (currentEl.textContent = '…'); await ensureTransportConnected();
 		const name = await sendAndExtract(state.transport!, 'get_mdns_name');
 		currentEl && (currentEl.textContent = typeof name === 'string' ? name : '—');
-	}
+	};
 	if (applyBtn) applyBtn.onclick = async () => {
 		const val = (input?.value || '').trim(); if (!val) { msg && (msg.textContent = 'Enter a name'); return; }
 		await ensureTransportConnected();
@@ -142,7 +143,7 @@ function initMdnsPanel() {
 
 function initDeviceModePanel() {
 	const panel = document.getElementById('tool-mode'); if (!panel) return;
-    panel.innerHTML = `
+	panel.innerHTML = `
 		<div class="row current-line"><span class="small muted">Current:</span><span class="v" id="devModeCurrent">—</span></div>
 		<div class="row mt-24">
 			<div class="segmented" id="devModeSeg">
@@ -160,13 +161,13 @@ function initDeviceModePanel() {
 	const seg = panel.querySelector('#devModeSeg') as HTMLElement | null;
 	const applyBtn = document.getElementById('devModeApplyBtn') as HTMLButtonElement | null;
 	const msg = document.getElementById('devModeMsg');
-	async function refresh() {
+	const refresh = async () => {
 		if (!(window as any).isConnected) return; try { currentEl && (currentEl.textContent = '…'); } catch {}
 		await ensureTransportConnected(); const mode = await sendAndExtract(state.transport!, 'get_device_mode');
 		currentEl && (currentEl.textContent = String(mode));
 		const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
 		buttons.forEach(b => b.classList.toggle('active', b.dataset.value === mode));
-	}
+	};
 	if (seg) seg.addEventListener('click', (e) => {
 		const t = e.target as HTMLElement; if (!t || !t.classList.contains('seg')) return;
 		const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
@@ -177,8 +178,28 @@ function initDeviceModePanel() {
 		const value = (active?.getAttribute('data-value') as any) || 'wifi';
 		await ensureTransportConnected();
 		const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: value });
-		msg && (msg.textContent = ok ? 'Saved. Restart device.' : 'Failed');
-		if (ok) await refresh();
+		msg && (msg.textContent = ok ? 'Saved.' : 'Failed');
+		if (ok) {
+			await refresh();
+			// If switched to setup mode, prompt user to power-cycle and allow confirming to auto-disconnect
+			if (value === 'setup') {
+				try {
+					const ov = document.getElementById('powerCycleOverlay') as HTMLElement | null;
+					const btn = document.getElementById('powerCycleConfirm') as HTMLButtonElement | null;
+					if (ov && btn) {
+						ov.style.display = 'flex';
+						const onClick = async () => {
+							btn.disabled = true;
+							try { await handlePortDisconnected('Restart to boot mode'); } finally {
+								ov.style.display = 'none'; btn.disabled = false;
+								btn.removeEventListener('click', onClick);
+							}
+						};
+						btn.addEventListener('click', onClick);
+					}
+				} catch {}
+			}
+		}
 	};
 	refresh();
 	const devTab = document.querySelector('#toolTabs .subtab[data-target="tool-mode"]');
@@ -204,7 +225,7 @@ function initLedPanel() {
 	let latestUserValue: number = 0;
 	let applyTimer: any = null;
 	let applying = false;
-	async function readAll() {
+	const readAll = async () => {
 		if (!(window as any).isConnected) { dutyCur && (dutyCur.textContent = '—'); curMaEl && (curMaEl.textContent = '—'); return; }
 		dutyCur && (dutyCur.textContent = '…');
 		await ensureTransportConnected();
@@ -220,25 +241,25 @@ function initLedPanel() {
 			if (dutyCur) dutyCur.textContent = '—';
 		}
 		if (curMaEl) curMaEl.textContent = `${cur ?? '—'} mA`;
-	}
-	function syncInputs(from: 'slider' | 'input') {
+	};
+	const syncInputs = (from: 'slider' | 'input') => {
 		const v = from === 'slider' ? parseInt(slider?.value || '0',10) : parseInt(dutyInput?.value || '0',10);
 		if (slider && from !== 'slider') slider.value = String(v);
 		if (dutyInput && from !== 'input') dutyInput.value = String(v);
 		latestUserValue = v;
 		scheduleApply();
-	}
+	};
 	slider && slider.addEventListener('input', () => syncInputs('slider'));
 	dutyInput && dutyInput.addEventListener('input', () => syncInputs('input'));
-	function scheduleApply() {
+	const scheduleApply = () => {
 		// If change >= 10% from last applied, apply immediately; else debounce 1s
 		const diff = Math.abs(latestUserValue - (currentDutyApplied ?? 0));
 		if (diff >= 10) { clearTimer(); void applyNow(); return; }
 		clearTimer();
 		applyTimer = setTimeout(() => { void applyNow(); }, 1000);
-	}
-	function clearTimer() { if (applyTimer) { try { clearTimeout(applyTimer); } catch {} applyTimer = null; } }
-	async function applyNow() {
+	};
+	const clearTimer = () => { if (applyTimer) { try { clearTimeout(applyTimer); } catch {} applyTimer = null; } };
+	const applyNow = async () => {
 		if (applying) return; applying = true; try {
 			const val = parseInt(String(latestUserValue || 0), 10);
 			// Avoid redundant set
@@ -253,7 +274,7 @@ function initLedPanel() {
 				if (curMaEl) curMaEl.textContent = `${cur ?? '—'} mA`;
 			} catch {}
 		} finally { applying = false; }
-	}
+	};
 	const tab = document.querySelector('#toolTabs .subtab[data-target="tool-pwm"]');
 	tab?.addEventListener('click', async () => { await readAll(); });
 	readAll();
@@ -284,7 +305,7 @@ function initSummaryPanel() {
 	const sumWifi = document.getElementById('sumWifi');
 	const sumDuty = document.getElementById('sumDuty');
 	const sumCurrent = document.getElementById('sumCurrent');
-	async function refreshSummary() {
+	const refreshSummary = async () => {
 		if (!(window as any).isConnected) return;
 		await ensureTransportConnected();
 		try {
@@ -314,7 +335,7 @@ function initSummaryPanel() {
 			if (sumDuty) sumDuty.textContent = `${duty ?? '—'}%`;
 			if (sumCurrent) sumCurrent.textContent = `${cur ?? '—'} mA`;
 		} catch {}
-	}
+	};
 	// Expose to index.html subtabs handler to auto-load when switching
 	;(window as any).autoLoadSummary = refreshSummary;
 	// Also refresh immediately if Summary tab is already active
@@ -326,6 +347,7 @@ initMdnsPanel();
 initDeviceModePanel();
 initLedPanel();
 initSummaryPanel();
+initUpdatePanel();
 
 // Start/stop UVC preview in the main connect block when connection state changes
 document.addEventListener('DOMContentLoaded', () => {
@@ -340,13 +362,13 @@ document.addEventListener('DOMContentLoaded', () => {
 			const pref = localStorage.getItem('uvcEnable');
 			if (uvcToggle && (pref === '1' || pref === 'true')) { uvcToggle.checked = true; }
 		} catch {}
-		function isUvcEnabled() { return !!(uvcToggle && uvcToggle.checked); }
+		const isUvcEnabled = () => !!(uvcToggle && uvcToggle.checked);
 		const startIfConnected = async () => {
 			if (!(window as any).isConnected) { box.style.display = 'none'; return; }
-			if (!isUvcEnabled()) { box.style.display = 'none'; if (info) info.textContent = 'Aktiviere "Enable UVC preview" im Advanced Menü.'; return; }
+			if (!isUvcEnabled()) { box.style.display = 'none'; if (info) info.textContent = 'Enable "UVC preview" in the Advanced menu.'; return; }
 			if ((state as any).connectionMode !== 'runtime') { box.style.display = 'none'; if (info) info.textContent = 'UVC preview only in runtime mode.'; return; }
 			const assoc = await findAssociatedUvc();
-			if (!assoc.deviceId) { if (info) info.textContent = 'Keine passende UVC-Kamera gefunden.'; box.style.display = 'none'; return; }
+			if (!assoc.deviceId) { if (info) info.textContent = 'No matching UVC camera found.'; box.style.display = 'none'; return; }
 			box.style.display = 'flex'; if (info) info.textContent = `UVC: ${assoc.label || 'camera'}`;
 			await startUvcPreview(video, info || undefined);
 		};
@@ -363,4 +385,71 @@ document.addEventListener('DOMContentLoaded', () => {
 		}
 	} catch {}
 });
+
+function initUpdatePanel() {
+	const body = document.getElementById('updateBody'); if (!body) return;
+	const lbl = document.getElementById('updateModeLabel') as HTMLElement | null;
+	const hintRuntime = document.getElementById('updateHintRuntime') as HTMLElement | null;
+	const actRuntime = document.getElementById('updateActionsRuntime') as HTMLElement | null;
+	const actBoot = document.getElementById('updateActionsBoot') as HTMLElement | null;
+	const btnSwitch = document.getElementById('btnSwitchToBoot') as HTMLInputElement | null;
+	const btnGo = document.getElementById('btnGoToFlash') as HTMLInputElement | null;
+	const msg = document.getElementById('updateMsg') as HTMLElement | null;
+	const refresh = async () => {
+		if (!(window as any).isConnected) {
+			if (lbl) lbl.textContent = '—';
+			hintRuntime && (hintRuntime.style.display = 'none');
+			actRuntime && (actRuntime.style.display = 'none');
+			actBoot && (actBoot.style.display = 'none');
+			return;
+		}
+		try {
+			await ensureTransportConnected();
+			// Query device mode (not used in label anymore, but keep call in case of side-effects)
+			await sendAndExtract(state.transport!, 'get_device_mode');
+			const isBoot = (state as any).connectionMode === 'boot';
+			if (lbl) lbl.textContent = isBoot ? 'Boot mode' : 'Not boot mode';
+			if (isBoot) {
+				hintRuntime && (hintRuntime.style.display = 'none');
+				actRuntime && (actRuntime.style.display = 'none');
+				actBoot && (actBoot.style.display = 'flex');
+			} else {
+				// runtime
+				hintRuntime && (hintRuntime.style.display = 'flex');
+				actRuntime && (actRuntime.style.display = 'flex');
+				actBoot && (actBoot.style.display = 'none');
+			}
+		} catch {}
+	};
+	btnSwitch && (btnSwitch.onclick = async () => {
+		try {
+			btnSwitch.disabled = true; msg && (msg.textContent = 'Switching to setup mode…');
+			await ensureTransportConnected();
+			const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: 'setup' });
+			if (!ok) { msg && (msg.textContent = 'Switch failed'); return; }
+			// Show full-screen power-cycle prompt; on confirm, auto-disconnect
+			try {
+				const ov = document.getElementById('powerCycleOverlay') as HTMLElement | null;
+				const btn = document.getElementById('powerCycleConfirm') as HTMLButtonElement | null;
+				if (ov && btn) {
+					ov.style.display = 'flex';
+					const onClick = async () => {
+						btn.disabled = true;
+						try { await handlePortDisconnected('Restart to boot mode'); } finally {
+							ov.style.display = 'none'; btn.disabled = false;
+							btn.removeEventListener('click', onClick);
+						}
+					};
+					btn.addEventListener('click', onClick);
+				}
+			} catch {}
+		} finally { btnSwitch.disabled = false; }
+	});
+	btnGo && (btnGo.onclick = () => {
+		const tab = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;
+		tab?.click();
+	});
+	document.addEventListener('ffvr-connected', refresh as any);
+	refresh();
+}
 
