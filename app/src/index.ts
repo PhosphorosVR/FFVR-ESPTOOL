@@ -88,6 +88,44 @@ wireWifiButtons();
 loadPrebuiltManifest();
 wireLegacyToggle();
 
+// Advanced: toggle visibility of additional tools (WiFi, Name, LED)
+function applyAdditionalToolsVisibility() {
+	const chk = document.getElementById('additionalTools') as HTMLInputElement | null;
+	const show = !chk || !!chk.checked;
+	const ids = ['tool-wifi','tool-mdns','tool-pwm'];
+	// Subtab elements
+	ids.forEach(id => {
+		const li = document.querySelector(`#toolTabs .subtab[data-target="${id}"]`) as HTMLElement | null;
+		if (li) li.style.display = show ? '' : 'none';
+		const panel = document.getElementById(id) as HTMLElement | null;
+		if (panel) panel.style.display = show ? panel.style.display : 'none';
+	});
+	// If current active subtab is hidden, switch to a safe one
+	const active = document.querySelector('#toolTabs .subtab.active') as HTMLElement | null;
+	if (active && ids.includes(active.getAttribute('data-target') || '')) {
+		const fallback = (document.querySelector('#toolTabs .subtab[data-target="tool-mode"]') as HTMLElement | null)
+					  || (document.querySelector('#toolTabs .subtab[data-target="tool-summary"]') as HTMLElement | null);
+		fallback?.click();
+	}
+}
+
+try {
+	const addToggle = document.getElementById('additionalTools') as HTMLInputElement | null;
+	if (addToggle) {
+		// Restore persisted preference
+		try {
+			const pref = localStorage.getItem('additionalTools');
+			if (pref === '0') addToggle.checked = false;
+			else if (pref === '1') addToggle.checked = true;
+		} catch {}
+		addToggle.addEventListener('change', () => {
+			try { localStorage.setItem('additionalTools', addToggle.checked ? '1' : '0'); } catch {}
+			applyAdditionalToolsVisibility();
+		});
+		applyAdditionalToolsVisibility();
+	}
+} catch {}
+
 // Console buttons
 const consoleStartButton = el.consoleStartButton();
 const consoleStopButton = el.consoleStopButton();

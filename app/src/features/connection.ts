@@ -114,14 +114,9 @@ export function wireConnection(term: any) {
       applyTabMode(state.connectionMode);
   // Notify UI of connection for UVC preview, etc.
   try { document.dispatchEvent(new CustomEvent('ffvr-connected')); } catch {}
-      // Select initial tab depending on mode
-      if (state.connectionMode === 'boot') {
-        const tabProgram = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;
-        tabProgram?.click();
-      } else {
-        const tabTools = document.querySelector('#tabs .tab[data-target="tools"]') as HTMLElement | null;
-        tabTools?.click();
-      }
+  // Always select Update tab initially
+  const tabUpdate = document.querySelector('#tabs .tab[data-target="update"]') as HTMLElement | null;
+  tabUpdate?.click();
       startPortPresenceMonitor();
     } catch (e: any) {
   // Logged to UI debug panel and terminal already

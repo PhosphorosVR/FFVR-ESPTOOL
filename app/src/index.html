@@ -57,6 +57,12 @@
                     Enable UVC preview
                   </label>
                 </div>
+                <div class="row mt-8">
+                  <label class="toggle" for="additionalTools">
+                    <input type="checkbox" id="additionalTools" checked />
+                    Show additional tools (WiFi, Name, LED)
+                  </label>
+                </div>
                 <div id="uvcPreviewBox" class="row mt-8" style="display:none; align-items:flex-start; gap:12px;">
                   <video id="uvcPreviewVideo" width="320" height="240" style="border:1px solid var(--border); border-radius:10px; display:block; background:transparent;" playsinline muted></video>
                   <div class="small muted" id="uvcPreviewInfo">Enable “UVC preview” to see the camera.</div>
@@ -75,10 +81,10 @@
           </div>
         </section>
         <ul class="tabs mt-32" id="tabs">
-          <li class="tab disabled" data-target="program">Flashing</li>
-          <li class="tab disabled" data-target="console">Console</li>
-          <li class="tab disabled" data-target="tools">Tools</li>
           <li class="tab disabled" data-target="update">Update</li>
+          <li class="tab disabled" data-target="tools">Tools</li>
+          <li class="tab disabled" data-target="console">Console</li>
+          <li class="tab disabled" data-target="program">Flashing</li>
         </ul>
         <section class="card" id="program" style="display:none;">
           <div class="card-header" style="display:none;">
@@ -330,17 +336,27 @@
           panels.forEach(function(p){ p.style.display = (p.id === id) ? 'block' : 'none'; });
           // Auto-load content when opening Summary panel
           if (id === 'tool-summary' && window.autoLoadSummary) { try { window.autoLoadSummary(); } catch(e){} }
+          try { localStorage.setItem('toolTabActive', id || ''); } catch(e){}
         }
         subtabs.forEach(function(tab){
           tab.addEventListener('click', function(){
+            // Skip hidden tabs
+            if ((tab.style && tab.style.display === 'none')) return;
             subtabs.forEach(function(t){ t.classList.remove('active'); t.setAttribute('aria-selected','false'); });
             tab.classList.add('active');
             tab.setAttribute('aria-selected','true');
             showPanel(tab.dataset.target);
           });
         });
-        var firstActive = document.querySelector('#toolTabs .subtab.active');
-        if (firstActive) showPanel(firstActive.getAttribute('data-target'));
+        var saved = null; try { saved = localStorage.getItem('toolTabActive'); } catch(e){}
+        var targetId = saved || (document.querySelector('#toolTabs .subtab.active') && document.querySelector('#toolTabs .subtab.active').getAttribute('data-target')) || 'tool-summary';
+        // If saved tab is hidden, fall back to Summary
+  var targetEl = document.querySelector('#toolTabs .subtab[data-target="'+targetId+'"]');
+  var hidden = targetEl && targetEl.style && targetEl.style.display === 'none';
+        if (hidden) targetId = 'tool-summary';
+        // Activate the target tab
+  var toActivate = document.querySelector('#toolTabs .subtab[data-target="'+targetId+'"]');
+  if (toActivate) toActivate.click(); else showPanel(targetId);
       })();
     </script>
   </body>
