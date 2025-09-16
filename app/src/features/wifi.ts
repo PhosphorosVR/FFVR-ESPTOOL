@@ -1,7 +1,7 @@
 import { state } from "../core/state";
 import { ensureTransportConnected } from "../core/serial";
 import { sendCommand, extractNetworks, sendAndExtract, WifiStatus } from "../core/jsonClient";
-import { escapeHtml, startStatusAnimation } from "../ui/utils";
+import { escapeHtml, startStatusAnimation, showPanelBusy, hidePanelBusy } from "../ui/utils";
 import { dbg } from "../ui/debug";
 
 export const parseNetworksFromResults = extractNetworks;
@@ -9,8 +9,10 @@ export const parseNetworksFromResults = extractNetworks;
 // Scan for available WiFi networks and render the table
 export async function wifiScanAndDisplay() {
   const statusEl = document.getElementById('wifiStatusMsg') as HTMLElement | null;
+  const panel = document.getElementById('tool-wifi') as HTMLElement | null;
   try {
     statusEl && (statusEl.textContent = 'Scanning...');
+    if (panel) showPanelBusy(panel, 'Scanning WiFi…');
     const pauseResp = await sendCommand(state.transport!, 'pause', { pause: true }, 5000);
     try {
       if (pauseResp && (pauseResp as any).error === 'Command timeout') {
@@ -48,7 +50,8 @@ export async function wifiScanAndDisplay() {
       if (selBox) selBox.style.display = 'none';
       if (pwdField) pwdField.style.display = 'none';
       if (ssidLabel) ssidLabel.textContent = '';
-      return;
+  if (panel) hidePanelBusy(panel);
+  return;
     }
     if (tableEl) tableEl.style.display = 'table';
     // Hide the hint once scan results are shown
@@ -81,13 +84,16 @@ export async function wifiScanAndDisplay() {
     });
   // We omit a verbose status like "Found N networks" since the table shows results
   statusEl && (statusEl.textContent = '');
+  if (panel) hidePanelBusy(panel);
   } catch (e: any) {
     statusEl && (statusEl.textContent = `Scan failed: ${e.message || e}`);
+    if (panel) hidePanelBusy(panel);
   }
 }
 
 export async function wifiConnectSelected() {
   const statusEl = document.getElementById('wifiStatusMsg') as HTMLElement | null;
+  const panel = document.getElementById('tool-wifi') as HTMLElement | null;
   const ssidLabel = document.getElementById('wifiSelectedSsidLabel') as HTMLElement | null;
   const pwdEl = document.getElementById('wifiPassword') as HTMLInputElement | null;
   const selBox = document.getElementById('wifiSelectionBox') as HTMLElement | null;
@@ -106,14 +112,17 @@ export async function wifiConnectSelected() {
     const stopApplyAnim = startStatusAnimation(statusEl, 'Applying WiFi settings');
     let setResp: any;
     try {
-  setResp = await sendCommand(state.transport!, 'set_wifi', { name: 'main', ssid, password, channel: 0, power: 0 }, 15000);
+      if (panel) showPanelBusy(panel, 'Saving WiFi settings…');
+      setResp = await sendCommand(state.transport!, 'set_wifi', { name: 'main', ssid, password, channel: 0, power: 0 }, 15000);
     } finally {
       try { stopApplyAnim(); } catch {}
+      if (panel) hidePanelBusy(panel);
     }
     if (setResp?.error) throw new Error(setResp.error);
 
     const stopConnectAnim = startStatusAnimation(statusEl, 'Connecting');
     try {
+      if (panel) showPanelBusy(panel, 'Connecting to WiFi…');
       await sendCommand(state.transport!, 'connect_wifi', {}, 10000);
       const start = Date.now();
       let ip: string | null = null;
@@ -136,6 +145,7 @@ export async function wifiConnectSelected() {
       statusEl && (statusEl.textContent = ip ? `Connected: ${ip}` : 'Connection not confirmed');
     } finally {
       try { stopConnectAnim(); } catch {}
+  if (panel) hidePanelBusy(panel);
     }
   } catch (e: any) {
     try {
@@ -143,6 +153,7 @@ export async function wifiConnectSelected() {
       if (pwdField) pwdField.style.display = open ? 'none' : 'inline-block';
     } catch {}
     statusEl && (statusEl.textContent = `Error: ${e.message || e}`);
+  if (panel) hidePanelBusy(panel);
   }
 }
 

@@ -1,5 +1,6 @@
 import type { Transport } from "ffvr-esptool/index.js";
 import { sendJsonCommand } from "./protocol";
+import { showBusy, hideBusy } from "../ui/utils";
 import { dbg } from "../ui/debug";
 
 // Shared types for JSON-command based features
@@ -35,7 +36,29 @@ export async function sendCommand(
   params?: JsonParams,
   timeoutMs = 15000
 ): Promise<JsonResponse> {
-  return sendJsonCommand(transport, command, params, timeoutMs);
+  // Map a few common commands to nicer busy messages
+  const nice: Record<string, string> = {
+    scan_networks: 'Scanning WiFi…',
+    get_wifi_status: 'Reading WiFi status…',
+    get_device_mode: 'Reading device mode…',
+    switch_mode: 'Applying mode…',
+    get_mdns_name: 'Reading name…',
+    set_mdns: 'Saving name…',
+    get_led_duty_cycle: 'Reading LED duty…',
+    set_led_duty_cycle: 'Setting LED duty…',
+    get_led_current: 'Reading LED current…',
+    get_serial: 'Reading serial…',
+    get_who_am_i: 'Reading device info…',
+    start_streaming: 'Starting stream…',
+    pause: 'Pausing…'
+  };
+  const label = nice[String(command)] || 'Working…';
+  try { showBusy(label); } catch {}
+  try {
+    return await sendJsonCommand(transport, command, params, timeoutMs);
+  } finally {
+    try { hideBusy(); } catch {}
+  }
 }
 
 // Helper to normalize/extract WiFi scan results from various firmware payload shapes
@@ -254,6 +277,22 @@ export async function sendAndExtract(
   params?: JsonParams,
   timeoutMs = 15000
 ): Promise<any> {
+  if (command === 'get_device_mode') {
+    // Robust retry: device may print noise or respond with transient error right after connect/switch
+    const attempts = 3;
+    const delayMs = 250;
+    for (let i = 1; i <= attempts; i++) {
+      const resp = await sendCommand(transport, 'get_device_mode', undefined, timeoutMs);
+      const mode = extractDeviceMode(resp);
+      if (mode !== 'unknown') return mode;
+      // If device returned structured error, try again briefly
+      if (resp && (resp as any).error) {
+        try { dbg(`get_device_mode attempt ${i}/${attempts} error: ${(resp as any).error}`, 'info'); } catch {}
+      }
+      if (i < attempts) await new Promise(r => setTimeout(r, delayMs));
+    }
+    return 'unknown';
+  }
   if (command === 'scan_networks') {
     const attempts = 3;
     const delayMs = 400;

@@ -261,6 +261,17 @@
         <button id="powerCycleConfirm" class="btn btn-primary" type="button">Confirm</button>
       </div>
     </div>
+    <!-- Global busy indicator (hidden by default) -->
+    <div id="globalBusy" style="display:none; position: fixed; top: 14px; right: 14px; z-index: 10001; align-items:center; gap:8px; padding:6px 10px; border:1px solid var(--border); background:#101725; color: var(--muted); border-radius: 999px; font-size: 12px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="animation: spin 1s linear infinite;">
+        <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.15)" stroke-width="3"/>
+        <path d="M22 12a10 10 0 0 0-10-10" stroke="var(--accent)" stroke-width="3"/>
+      </svg>
+      <span id="globalBusyText">Working…</span>
+    </div>
+    <style>
+      @keyframes spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
+    </style>
     <script src="index.ts" type="module"></script>
     <script>
       var isSafari = /constructor/i.test(window.HTMLElement) || (function (p) { return p.toString() === "[object SafariRemoteNotification]"; })(!window['safari'] || (typeof safari !== 'undefined' && window['safari'].pushNotification));

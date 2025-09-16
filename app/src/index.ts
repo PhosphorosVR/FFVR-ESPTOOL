@@ -13,6 +13,7 @@ import { ensureTransportConnected, handlePortDisconnected } from "./core/serial"
 import { sendAndExtract } from "./core/jsonClient";
 import { findAssociatedUvc, startUvcPreview } from "./core/uvc";
 import { addRow, performFlash } from "./features/flashing";
+import { showPanelBusy, hidePanelBusy } from "./ui/utils";
 
 // Initialize debug panel visibility and prior flash success banner
 initDebugPanel();
@@ -125,15 +126,19 @@ function initMdnsPanel() {
 	const refresh = async () => {
 		if (!(window as any).isConnected) { currentEl && (currentEl.textContent = '—'); return; }
 		currentEl && (currentEl.textContent = '…'); await ensureTransportConnected();
+		showPanelBusy(panel, 'Reading name…');
 		const name = await sendAndExtract(state.transport!, 'get_mdns_name');
 		currentEl && (currentEl.textContent = typeof name === 'string' ? name : '—');
+		hidePanelBusy(panel);
 	};
 	if (applyBtn) applyBtn.onclick = async () => {
 		const val = (input?.value || '').trim(); if (!val) { msg && (msg.textContent = 'Enter a name'); return; }
 		await ensureTransportConnected();
+		showPanelBusy(panel, 'Saving name…');
 		const ok = await sendAndExtract(state.transport!, 'set_mdns', { hostname: val });
 		msg && (msg.textContent = ok ? 'Saved. Restart device.' : 'Failed to save');
 		if (ok) await refresh();
+		hidePanelBusy(panel);
 	};
 	// Auto-load current when tab is opened or if already active
 	refresh();
@@ -163,10 +168,13 @@ function initDeviceModePanel() {
 	const msg = document.getElementById('devModeMsg');
 	const refresh = async () => {
 		if (!(window as any).isConnected) return; try { currentEl && (currentEl.textContent = '…'); } catch {}
-		await ensureTransportConnected(); const mode = await sendAndExtract(state.transport!, 'get_device_mode');
+		await ensureTransportConnected();
+		showPanelBusy(panel, 'Reading device mode…');
+		const mode = await sendAndExtract(state.transport!, 'get_device_mode');
 		currentEl && (currentEl.textContent = String(mode));
 		const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
 		buttons.forEach(b => b.classList.toggle('active', b.dataset.value === mode));
+		hidePanelBusy(panel);
 	};
 	if (seg) seg.addEventListener('click', (e) => {
 		const t = e.target as HTMLElement; if (!t || !t.classList.contains('seg')) return;
@@ -177,28 +185,33 @@ function initDeviceModePanel() {
 		const active = seg?.querySelector('.seg.active') as HTMLElement | null;
 		const value = (active?.getAttribute('data-value') as any) || 'wifi';
 		await ensureTransportConnected();
-		const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: value });
-		msg && (msg.textContent = ok ? 'Saved.' : 'Failed');
-		if (ok) {
-			await refresh();
-			// If switched to setup mode, prompt user to power-cycle and allow confirming to auto-disconnect
-			if (value === 'setup') {
-				try {
-					const ov = document.getElementById('powerCycleOverlay') as HTMLElement | null;
-					const btn = document.getElementById('powerCycleConfirm') as HTMLButtonElement | null;
-					if (ov && btn) {
-						ov.style.display = 'flex';
-						const onClick = async () => {
-							btn.disabled = true;
-							try { await handlePortDisconnected('Restart to boot mode'); } finally {
-								ov.style.display = 'none'; btn.disabled = false;
-								btn.removeEventListener('click', onClick);
-							}
-						};
-						btn.addEventListener('click', onClick);
-					}
-				} catch {}
+		showPanelBusy(panel, 'Applying mode…');
+		try {
+			const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: value });
+			msg && (msg.textContent = ok ? 'Saved.' : 'Failed');
+			if (ok) {
+				await refresh();
+				// If switched to setup mode, prompt user to power-cycle and allow confirming to auto-disconnect
+				if (value === 'setup') {
+					try {
+						const ov = document.getElementById('powerCycleOverlay') as HTMLElement | null;
+						const btn = document.getElementById('powerCycleConfirm') as HTMLButtonElement | null;
+						if (ov && btn) {
+							ov.style.display = 'flex';
+							const onClick = async () => {
+								btn.disabled = true;
+								try { await handlePortDisconnected('Restart to boot mode'); } finally {
+									ov.style.display = 'none'; btn.disabled = false;
+									btn.removeEventListener('click', onClick);
+								}
+							};
+							btn.addEventListener('click', onClick);
+						}
+					} catch {}
+				}
 			}
+		} finally {
+			hidePanelBusy(panel);
 		}
 	};
 	refresh();
@@ -229,6 +242,7 @@ function initLedPanel() {
 		if (!(window as any).isConnected) { dutyCur && (dutyCur.textContent = '—'); curMaEl && (curMaEl.textContent = '—'); return; }
 		dutyCur && (dutyCur.textContent = '…');
 		await ensureTransportConnected();
+		showPanelBusy(panel, 'Reading LED settings…');
 		const duty = await sendAndExtract(state.transport!, 'get_led_duty_cycle');
 		const cur = await sendAndExtract(state.transport!, 'get_led_current');
 		if (typeof duty === 'number') {
@@ -240,7 +254,8 @@ function initLedPanel() {
 		} else {
 			if (dutyCur) dutyCur.textContent = '—';
 		}
-		if (curMaEl) curMaEl.textContent = `${cur ?? '—'} mA`;
+	if (curMaEl) curMaEl.textContent = `${cur ?? '—'} mA`;
+	hidePanelBusy(panel);
 	};
 	const syncInputs = (from: 'slider' | 'input') => {
 		const v = from === 'slider' ? parseInt(slider?.value || '0',10) : parseInt(dutyInput?.value || '0',10);
@@ -265,6 +280,7 @@ function initLedPanel() {
 			// Avoid redundant set
 			if (Math.abs(val - (currentDutyApplied ?? 0)) < 1) return;
 			await ensureTransportConnected();
+			showPanelBusy(panel, 'Setting LED duty…');
 			await sendAndExtract(state.transport!, 'set_led_duty_cycle', { dutyCycle: val });
 			currentDutyApplied = val;
 			if (dutyCur) dutyCur.textContent = `${val}%`;
@@ -274,6 +290,7 @@ function initLedPanel() {
 				if (curMaEl) curMaEl.textContent = `${cur ?? '—'} mA`;
 			} catch {}
 		} finally { applying = false; }
+		hidePanelBusy(panel);
 	};
 	const tab = document.querySelector('#toolTabs .subtab[data-target="tool-pwm"]');
 	tab?.addEventListener('click', async () => { await readAll(); });
@@ -308,6 +325,7 @@ function initSummaryPanel() {
 	const refreshSummary = async () => {
 		if (!(window as any).isConnected) return;
 		await ensureTransportConnected();
+		showPanelBusy(panel, 'Reading device summary…');
 		try {
 			const serialInfo = await sendAndExtract(state.transport!, 'get_serial');
 			if (serialInfo?.serial && sumSerial) sumSerial.textContent = String(serialInfo.serial);
@@ -322,8 +340,15 @@ function initSummaryPanel() {
 			if (who?.version && sumVersion) sumVersion.textContent = String(who.version);
 		} catch {}
 		try {
-			const mode = await sendAndExtract(state.transport!, 'get_device_mode');
-			if (sumMode) sumMode.textContent = String(mode);
+			// If connection just switched to boot, we already know the effective mode
+			let modeStr: string | null = null;
+			if ((state as any).connectionMode === 'boot') {
+				modeStr = 'setup';
+			} else {
+				const mode = await sendAndExtract(state.transport!, 'get_device_mode');
+				modeStr = String(mode);
+			}
+			if (sumMode && modeStr) sumMode.textContent = modeStr;
 		} catch {}
 		try {
 			const wifi = await sendAndExtract(state.transport!, 'get_wifi_status');
@@ -335,6 +360,7 @@ function initSummaryPanel() {
 			if (sumDuty) sumDuty.textContent = `${duty ?? '—'}%`;
 			if (sumCurrent) sumCurrent.textContent = `${cur ?? '—'} mA`;
 		} catch {}
+		hidePanelBusy(panel);
 	};
 	// Expose to index.html subtabs handler to auto-load when switching
 	;(window as any).autoLoadSummary = refreshSummary;
@@ -405,6 +431,7 @@ function initUpdatePanel() {
 		}
 		try {
 			await ensureTransportConnected();
+			showPanelBusy(body, 'Reading status…');
 			// Query device mode (not used in label anymore, but keep call in case of side-effects)
 			await sendAndExtract(state.transport!, 'get_device_mode');
 			const isBoot = (state as any).connectionMode === 'boot';
@@ -419,12 +446,13 @@ function initUpdatePanel() {
 				actRuntime && (actRuntime.style.display = 'flex');
 				actBoot && (actBoot.style.display = 'none');
 			}
-		} catch {}
+		} catch {} finally { hidePanelBusy(body); }
 	};
 	btnSwitch && (btnSwitch.onclick = async () => {
 		try {
 			btnSwitch.disabled = true; msg && (msg.textContent = 'Switching to setup mode…');
 			await ensureTransportConnected();
+			showPanelBusy(body, 'Switching to boot mode…');
 			const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: 'setup' });
 			if (!ok) { msg && (msg.textContent = 'Switch failed'); return; }
 			// Show full-screen power-cycle prompt; on confirm, auto-disconnect
@@ -443,7 +471,7 @@ function initUpdatePanel() {
 					btn.addEventListener('click', onClick);
 				}
 			} catch {}
-		} finally { btnSwitch.disabled = false; }
+		} finally { hidePanelBusy(body); btnSwitch.disabled = false; }
 	});
 	btnGo && (btnGo.onclick = () => {
 		const tab = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;
