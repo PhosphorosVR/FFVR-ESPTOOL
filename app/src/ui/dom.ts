@@ -40,14 +40,22 @@ export function setTabsEnabled(enabled: boolean) {
   } catch {}
 }
 
-// Enable/disable tabs depending on connection mode. In 'runtime' we only allow Tools + Update.
+// Enable/disable tabs depending on connection mode.
+// UPDATED: In 'boot' mode now ONLY the flashing (program) tab is active.
+// Runtime mode behavior unchanged (Tools + Update enabled).
 export function applyTabMode(mode: 'boot' | 'runtime' | null) {
   try {
     const tabs = Array.from(document.querySelectorAll('#tabs .tab')) as HTMLElement[];
     tabs.forEach(t => t.classList.add('disabled'));
     if (!mode) return;
-    const allowAll = mode === 'boot';
-    const enableTargets = allowAll ? ['program','console','tools','update'] : ['tools','update'];
+    let enableTargets: string[] = [];
+    if (mode === 'boot') {
+      // Bootloader: Flashing + Console erlaubt
+      enableTargets = ['program','console'];
+    } else {
+      // Runtime: Tools + Update
+      enableTargets = ['tools','update'];
+    }
     enableTargets.forEach(id => {
       const tab = document.querySelector(`#tabs .tab[data-target="${id}"]`) as HTMLElement | null;
       if (tab) tab.classList.remove('disabled');
