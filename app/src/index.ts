@@ -284,7 +284,29 @@ function initDeviceModePanel() {
 		await ensureTransportConnected();
 		const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: value });
 		msg && (msg.textContent = ok ? 'Saved.' : 'Failed');
-		if (ok) await refresh();
+		if (ok) {
+			await refresh();
+			if (value === 'setup') {
+				try {
+					const ov = document.getElementById('powerCycleOverlay') as HTMLElement | null;
+					const btn = document.getElementById('powerCycleConfirm') as HTMLButtonElement | null;
+					if (ov && btn) {
+						ov.style.display = 'flex';
+						btn.addEventListener('click', async () => {
+							btn.disabled = true;
+							try {
+								const { handlePortDisconnected } = await import('./core/serial');
+								await handlePortDisconnected('Restart to boot mode');
+							} catch {}
+							finally {
+								ov.style.display = 'none';
+								btn.disabled = false;
+							}
+						}, { once: true });
+					}
+				} catch {}
+			}
+		}
 	};
 	refresh();
 	const devTab = document.querySelector('#toolTabs .subtab[data-target="tool-mode"]');
@@ -431,6 +453,78 @@ initMdnsPanel();
 initDeviceModePanel();
 initLedPanel();
 initSummaryPanel();
+
+// Update panel (unified entry for switching to boot and proceeding to flashing)
+function initUpdatePanel() {
+	const panel = document.getElementById('update'); if (!panel) return;
+	const body = panel.querySelector('.card-body') as HTMLElement | null;
+	if (!body) return;
+	body.innerHTML = `
+		<div class="row mt-8" id="updateModeRow"><span class="small muted">Device:</span><span class="v" id="updateModeLabel">—</span></div>
+		<div class="row mt-12 small muted" id="updateHintRuntime" style="display:none;">Switch to boot mode to flash firmware.</div>
+		<div class="row mt-12" id="updateActionsRuntime" style="display:none; gap: 8px;">
+			<input class="btn btn-secondary" type="button" id="btnSwitchToBoot" value="Switch to boot mode" />
+		</div>
+		<div class="row mt-12" id="updateActionsBoot" style="display:none;">
+			<input class="btn btn-primary" type="button" id="btnGoToFlash" value="Continue to flashing" />
+		</div>
+		<div class="row mt-24 small muted" style="opacity:.85;" id="updateFooterNote">After flashing, power‑cycle the device to return to runtime mode.</div>
+	`;
+	const lbl = document.getElementById('updateModeLabel');
+	const hintRuntime = document.getElementById('updateHintRuntime');
+	const actRuntime = document.getElementById('updateActionsRuntime');
+	const actBoot = document.getElementById('updateActionsBoot');
+	const btnSwitch = document.getElementById('btnSwitchToBoot') as HTMLInputElement | null;
+	const btnFlash = document.getElementById('btnGoToFlash') as HTMLInputElement | null;
+
+	async function refresh() {
+		try {
+			const isBoot = (state as any).connectionMode === 'boot';
+			if (lbl) lbl.textContent = isBoot ? 'Boot mode' : 'Runtime mode';
+			if (isBoot) {
+				if (hintRuntime) hintRuntime.style.display = 'none';
+				if (actRuntime) actRuntime.style.display = 'none';
+				if (actBoot) actBoot.style.display = 'flex';
+			} else {
+				if (hintRuntime) { hintRuntime.style.display = 'flex'; }
+				if (actRuntime) actRuntime.style.display = 'flex';
+				if (actBoot) actBoot.style.display = 'none';
+			}
+		} catch {}
+	}
+
+	btnSwitch && (btnSwitch.onclick = async () => {
+		try {
+			if (!(window as any).isConnected) return;
+			await ensureTransportConnected();
+			const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: 'setup' });
+			if (ok) {
+				// Show same overlay as device mode panel
+				const ov = document.getElementById('powerCycleOverlay') as HTMLElement | null;
+				const btn = document.getElementById('powerCycleConfirm') as HTMLButtonElement | null;
+				if (ov && btn) {
+					ov.style.display = 'flex';
+					btn.addEventListener('click', async () => {
+						btn.disabled = true;
+						try { const { handlePortDisconnected } = await import('./core/serial'); await handlePortDisconnected('Restart to boot mode'); } catch {}
+						finally { ov.style.display = 'none'; btn.disabled = false; }
+					}, { once: true });
+				}
+			}
+		} catch {}
+	});
+
+	btnFlash && (btnFlash.onclick = () => {
+		// Navigate to flashing tab
+		const tabProgram = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;
+		tabProgram?.click();
+	});
+
+	document.addEventListener('ffvr-connected', () => { refresh(); });
+	refresh();
+}
+
+initUpdatePanel();
 
 // Start/stop UVC preview in the main connect block when connection state changes
 document.addEventListener('DOMContentLoaded', () => {

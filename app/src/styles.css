@@ -182,6 +182,12 @@ th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 /* Overlay danger emphasis */
 .overlay .btn-danger { background: linear-gradient(180deg, #ff7a7a, #e05555); border-color: #932b2b; }
 
+/* Full-screen overlay (modal) */
+.overlay { position: fixed; inset: 0; background: rgba(10,15,24,0.78); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 20px; }
+.overlay-content { background: #121a25; border: 1px solid var(--border); border-radius: 16px; padding: 28px 32px 32px; max-width: 520px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.55); }
+.overlay-content h3 { margin: 0 0 12px 0; font-size: 20px; font-weight: 600; letter-spacing: .5px; }
+.overlay-content p { margin: 0 0 20px 0; line-height: 1.45; font-size: 14px; color: var(--muted); }
+
 /* Segmented control */
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: #0f1520; }
 .segmented .seg { appearance: none; background: transparent; border: none; color: var(--muted); padding: 8px 14px; cursor: pointer; }
