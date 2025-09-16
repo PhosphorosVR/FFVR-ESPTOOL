@@ -31,6 +31,8 @@ export async function sendJsonCommand(transport: Transport, command: string, par
   let lastEmptyNetworks: any[] | null = null;
   // Derive a reasonable grace window from timeout (max 5s, min 1.5s)
   const scanGraceMs = Math.max(1500, Math.min(5000, Math.floor(timeoutMs / 8)));
+  let triedRetry = false;
+  let skippedFirstInvalid = false;
   while (Date.now() - start < timeoutMs) {
     const loop = (transport as any).rawRead();
     const { value, done } = await loop.next();
@@ -99,7 +101,19 @@ export async function sendJsonCommand(transport: Transport, command: string, par
               return obj;
             }
           }
-        } catch {}
+        } catch (e) {
+          // Attempt recovery strategies similar to noisy serial parsing issues
+          if (!triedRetry) {
+            triedRetry = true;
+            try { dbg('WARN: JSON parse failed; attempting one-time retry...', 'info'); } catch {}
+            await new Promise(r => setTimeout(r, 250));
+          } else if (!skippedFirstInvalid) {
+            skippedFirstInvalid = true;
+            try { dbg('WARN: Skipping one invalid fragment and continuing…', 'info'); } catch {}
+          } else {
+            // swallow and continue until timeout
+          }
+        }
         sIdx = buffer.indexOf('{');
         continue;
       } else {

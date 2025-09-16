@@ -57,6 +57,12 @@
                     Enable UVC preview
                   </label>
                 </div>
+                <div class="row mt-8">
+                  <label class="toggle" for="additionalTools">
+                    <input type="checkbox" id="additionalTools" checked />
+                    Show additional tools (WiFi, Name, LED)
+                  </label>
+                </div>
                 <div id="uvcPreviewBox" class="row mt-8" style="display:none; align-items:flex-start; gap:12px;">
                   <video id="uvcPreviewVideo" width="320" height="240" style="border:1px solid var(--border); border-radius:10px; display:block; background:transparent;" playsinline muted></video>
                   <div class="small muted" id="uvcPreviewInfo">Aktiviere „Enable UVC preview“, um die Kamera zu sehen.</div>
@@ -75,10 +81,10 @@
           </div>
         </section>
         <ul class="tabs mt-32" id="tabs">
-          <li class="tab disabled" data-target="program">Flashing</li>
-          <li class="tab disabled" data-target="console">Console</li>
-          <li class="tab disabled" data-target="tools">Tools</li>
           <li class="tab disabled" data-target="update">Update</li>
+          <li class="tab disabled" data-target="tools">Tools</li>
+          <li class="tab disabled" data-target="console">Console</li>
+          <li class="tab disabled" data-target="program">Flashing</li>
         </ul>
         <section class="card" id="program" style="display:none;">
           <div class="card-header" style="display:none;">
@@ -179,16 +185,16 @@
           </div>
           <div class="card-body">
             <ul class="subtabs" id="toolTabs" role="tablist" aria-label="Setup tools">
-              <li class="subtab active" role="tab" aria-selected="true" data-target="tool-wifi">📶 WiFi</li>
-              <li class="subtab" role="tab" aria-selected="false" data-target="tool-mdns">📛 Name</li>
-              
-              <li class="subtab" role="tab" aria-selected="false" data-target="tool-mode">🔄 Mode</li>
-              <li class="subtab" role="tab" aria-selected="false" data-target="tool-pwm">💡 LED</li>
-              
+              <li class="subtab active" role="tab" aria-selected="true" data-target="tool-mode">� Mode</li>
               <li class="subtab" role="tab" aria-selected="false" data-target="tool-summary">🧩 Summary</li>
+              <li class="subtab" role="tab" aria-selected="false" data-target="tool-wifi">� WiFi</li>
+              <li class="subtab" role="tab" aria-selected="false" data-target="tool-mdns">� Name</li>
+              <li class="subtab" role="tab" aria-selected="false" data-target="tool-pwm">💡 LED</li>
             </ul>
             <div class="tool-panels">
-              <div id="tool-wifi" class="tool-panel" role="tabpanel" style="display:block;">
+              <div id="tool-mode" class="tool-panel" role="tabpanel" style="display:block;"></div>
+              <div id="tool-summary" class="tool-panel" role="tabpanel" style="display:none"></div>
+              <div id="tool-wifi" class="tool-panel" role="tabpanel" style="display:none;">
                 <div class="row">
                   <input class="btn btn-secondary" type="button" id="wifiScanButton" value="Scan networks" />
                 </div>
@@ -217,11 +223,7 @@
               </div>
               <div id="tool-mdns" class="tool-panel" role="tabpanel" style="display:none;"></div>
               <div id="tool-uvc" class="tool-panel" role="tabpanel" style="display:none;"></div>
-              
-              <div id="tool-mode" class="tool-panel" role="tabpanel" style="display:none;"></div>
               <div id="tool-pwm" class="tool-panel" role="tabpanel" style="display:none;"></div>
-              
-              <div id="tool-summary" class="tool-panel" role="tabpanel" style="display:none"></div>
             </div>
           </div>
         </section>
@@ -236,6 +238,31 @@
       </main>
     </div>
     <script src="index.ts" type="module"></script>
+    <!-- Global busy indicator (floating) -->
+    <div id="globalBusy" style="display:none; position: fixed; top: 14px; right: 14px; z-index: 10001; align-items:center; gap:8px; padding:6px 10px; border:1px solid var(--border); background:#101725; color: var(--muted); border-radius: 999px; font-size: 12px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="animation: spin 1s linear infinite;">
+        <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.15)" stroke-width="3"/>
+        <path d="M22 12a10 10 0 0 0-10-10" stroke="var(--accent)" stroke-width="3"/>
+      </svg>
+      <span id="globalBusyText">Working…</span>
+    </div>
+    <!-- Warning overlay for enabling additional tools -->
+    <div id="additionalToolsOverlay" style="display:none;" class="overlay">
+      <div class="overlay-content">
+        <h3>Warning</h3>
+        <p>Using WiFi/Name/LED tools on production hardware may cause issues. Proceed only if you understand the risks.</p>
+        <div class="row" style="justify-content:center; gap:12px;">
+          <button id="additionalToolsCancel" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="additionalToolsConfirm" class="btn btn-danger" type="button">I understand</button>
+        </div>
+      </div>
+    </div>
+    <style>
+      @keyframes spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
+      .has-panel-busy { position: relative; }
+      .panel-busy-indicator { position: absolute; top: 4px; right: 6px; display: inline-flex; align-items:center; gap:6px; font-size:11px; padding:3px 8px; background:#101725; border:1px solid var(--border); border-radius:999px; color: var(--muted); }
+      .panel-busy-indicator .spin { animation: spin 1s linear infinite; }
+    </style>
     <script>
       var isSafari = /constructor/i.test(window.HTMLElement) || (function (p) { return p.toString() === "[object SafariRemoteNotification]"; })(!window['safari'] || (typeof safari !== 'undefined' && window['safari'].pushNotification));
       if(isSafari){

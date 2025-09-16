@@ -17,17 +17,16 @@
 }
 
 * { box-sizing: border-box; }
-html, body { min-height: 100%; }
+html, body { min-height: 100%; width: 100%; overflow-x: hidden; }
 body {
   margin: 0;
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
   background-color: var(--bg);
-  background-image: radial-gradient(1200px 700px at 20% -10%, #12223a 0%, transparent 60%),
-                    radial-gradient(1200px 700px at 120% 10%, #101b2c 0%, transparent 60%);
+  /* Responsive radial accents */
+  background-image: radial-gradient(120% 120% at 0% 0%, #12223a 0%, transparent 60%),
+                    radial-gradient(120% 120% at 100% 10%, #101b2c 0%, transparent 60%);
   background-repeat: no-repeat, no-repeat;
-  background-attachment: fixed, fixed; /* keep gradients stable while scrolling */
-  background-size: 1400px 800px, 1400px 800px; /* ensure full coverage without tiling edges */
-  background-position: 20% -10%, 120% 10%;
+  background-attachment: fixed, fixed;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -176,6 +175,12 @@ th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 #wifiPwdField { margin-left: 36px; }
 /* WiFi: more space above the table for readability */
 #wifiTable { margin-top: 20px; }
+
+/* Panel busy helper */
+.panel-busy-indicator { font-size:11px; }
+
+/* Overlay danger emphasis */
+.overlay .btn-danger { background: linear-gradient(180deg, #ff7a7a, #e05555); border-color: #932b2b; }
 
 /* Segmented control */
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: #0f1520; }

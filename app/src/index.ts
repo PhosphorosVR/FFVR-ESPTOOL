@@ -86,6 +86,103 @@ wireWifiButtons();
 loadPrebuiltManifest();
 wireLegacyToggle();
 
+// Additional tools (WiFi, Name, LED) visibility toggle & confirmation
+function updateModeSegVisibility() {
+	try {
+		const seg = document.querySelector('#tool-mode #devModeSeg') as HTMLElement | null;
+		if (!seg) return;
+		const chk = document.getElementById('additionalTools') as HTMLInputElement | null;
+		const showExtra = !chk || chk.checked;
+		const wifiBtn = seg.querySelector('.seg[data-value="wifi"]') as HTMLElement | null;
+		if (wifiBtn) wifiBtn.style.display = showExtra ? '' : 'none';
+		// If active hidden, switch
+		const active = seg.querySelector('.seg.active') as HTMLElement | null;
+		if (active && wifiBtn && wifiBtn.style.display === 'none' && active.dataset.value === 'wifi') {
+			const fallback = seg.querySelector('.seg[data-value="uvc"]') as HTMLElement | null
+				|| seg.querySelector('.seg[data-value="setup"]') as HTMLElement | null;
+			if (fallback) {
+				seg.querySelectorAll('.seg').forEach(b => b.classList.remove('active'));
+				fallback.classList.add('active');
+			}
+		}
+	} catch {}
+}
+
+function ensureVisibleToolSubtabActive() {
+	try {
+		const subtabs = Array.from(document.querySelectorAll('#toolTabs .subtab')) as HTMLElement[];
+		const vis = (el: HTMLElement) => el.style.display !== 'none';
+		let active = subtabs.find(t => t.classList.contains('active'));
+		if (!active || !vis(active)) {
+			const pref = ['tool-mode','tool-summary'];
+			let target: HTMLElement | null = null;
+			for (const id of pref) {
+				const t = document.querySelector(`#toolTabs .subtab[data-target="${id}"]`) as HTMLElement | null;
+				if (t && vis(t)) { target = t; break; }
+			}
+			if (!target) target = subtabs.find(vis) || null;
+			target?.click();
+		}
+	} catch {}
+}
+
+function applyAdditionalToolsVisibility() {
+	try {
+		const chk = document.getElementById('additionalTools') as HTMLInputElement | null;
+		const show = !chk || chk.checked;
+		const ids = ['tool-wifi','tool-mdns','tool-pwm'];
+		ids.forEach(id => {
+			const li = document.querySelector(`#toolTabs .subtab[data-target="${id}"]`) as HTMLElement | null;
+			if (li) li.style.display = show ? '' : 'none';
+			const panel = document.getElementById(id) as HTMLElement | null;
+			if (panel && !show) panel.style.display = 'none';
+		});
+		updateModeSegVisibility();
+		ensureVisibleToolSubtabActive();
+	} catch {}
+}
+
+try {
+	const addToggle = document.getElementById('additionalTools') as HTMLInputElement | null;
+	if (addToggle) {
+		try {
+			const pref = localStorage.getItem('additionalTools');
+			if (pref === '0') addToggle.checked = false;
+			else if (pref === '1') addToggle.checked = true;
+		} catch {}
+		addToggle.addEventListener('change', () => {
+			if (addToggle.checked) {
+				const ov = document.getElementById('additionalToolsOverlay') as HTMLElement | null;
+				const ok = document.getElementById('additionalToolsConfirm') as HTMLButtonElement | null;
+				const cancel = document.getElementById('additionalToolsCancel') as HTMLButtonElement | null;
+				if (ov && ok && cancel) {
+					ov.style.display = 'flex';
+					cancel.addEventListener('click', () => {
+						ov.style.display = 'none';
+						addToggle.checked = false;
+						try { localStorage.setItem('additionalTools','0'); } catch {}
+						applyAdditionalToolsVisibility();
+					}, { once: true });
+					ok.addEventListener('click', () => {
+						ov.style.display = 'none';
+						try { localStorage.setItem('additionalTools','1'); } catch {}
+						applyAdditionalToolsVisibility();
+					}, { once: true });
+				} else {
+					// fallback no overlay
+					addToggle.checked = false;
+					try { localStorage.setItem('additionalTools','0'); } catch {}
+					applyAdditionalToolsVisibility();
+				}
+			} else {
+				try { localStorage.setItem('additionalTools','0'); } catch {}
+				applyAdditionalToolsVisibility();
+			}
+		});
+		applyAdditionalToolsVisibility();
+	}
+} catch {}
+
 // Console buttons
 const consoleStartButton = el.consoleStartButton();
 const consoleStopButton = el.consoleStopButton();
@@ -164,8 +261,12 @@ function initDeviceModePanel() {
 		if (!(window as any).isConnected) return; try { currentEl && (currentEl.textContent = '…'); } catch {}
 		await ensureTransportConnected(); const mode = await sendAndExtract(state.transport!, 'get_device_mode');
 		currentEl && (currentEl.textContent = String(mode));
+		updateModeSegVisibility();
 		const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
-		buttons.forEach(b => b.classList.toggle('active', b.dataset.value === mode));
+		const chk = document.getElementById('additionalTools') as HTMLInputElement | null;
+		const wifiHidden = chk && !chk.checked;
+		const targetValue = (wifiHidden && mode === 'wifi') ? 'uvc' : String(mode);
+		buttons.forEach(b => b.classList.toggle('active', b.dataset.value === targetValue));
 	}
 	if (seg) seg.addEventListener('click', (e) => {
 		const t = e.target as HTMLElement; if (!t || !t.classList.contains('seg')) return;
@@ -174,10 +275,15 @@ function initDeviceModePanel() {
 	});
 	if (applyBtn) applyBtn.onclick = async () => {
 		const active = seg?.querySelector('.seg.active') as HTMLElement | null;
-		const value = (active?.getAttribute('data-value') as any) || 'wifi';
+		let value = (active?.getAttribute('data-value') as any) || '';
+		if (!value) {
+			const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
+			const firstVisible = buttons.find(b => (b as HTMLElement).style.display !== 'none');
+			value = (firstVisible?.dataset.value as any) || 'setup';
+		}
 		await ensureTransportConnected();
 		const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: value });
-		msg && (msg.textContent = ok ? 'Saved. Restart device.' : 'Failed');
+		msg && (msg.textContent = ok ? 'Saved.' : 'Failed');
 		if (ok) await refresh();
 	};
 	refresh();
@@ -315,9 +421,8 @@ function initSummaryPanel() {
 			if (sumCurrent) sumCurrent.textContent = `${cur ?? '—'} mA`;
 		} catch {}
 	}
-	// Expose to index.html subtabs handler to auto-load when switching
+	// Auto-load on show + persist last active tool subtab
 	;(window as any).autoLoadSummary = refreshSummary;
-	// Also refresh immediately if Summary tab is already active
 	const isActive = (document.querySelector('#toolTabs .subtab.active') as HTMLElement | null)?.dataset.target === 'tool-summary';
 	if (isActive) refreshSummary();
 }
