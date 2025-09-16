@@ -89,6 +89,44 @@ loadPrebuiltManifest();
 wireLegacyToggle();
 
 // Advanced: toggle visibility of additional tools (WiFi, Name, LED)
+function updateModeSegVisibility() {
+	try {
+		const seg = document.querySelector('#tool-mode #devModeSeg') as HTMLElement | null;
+		if (!seg) return;
+		const chk = document.getElementById('additionalTools') as HTMLInputElement | null;
+		const showWifi = !chk || !!chk.checked;
+		const wifiBtn = seg.querySelector('.seg[data-value="wifi"]') as HTMLElement | null;
+		if (wifiBtn) wifiBtn.style.display = showWifi ? '' : 'none';
+		// If active selection is now hidden, switch to a safe visible option
+		const active = seg.querySelector('.seg.active') as HTMLButtonElement | null;
+		if (!showWifi && active && active.dataset.value === 'wifi') {
+			const repl = (seg.querySelector('.seg[data-value="uvc"]') as HTMLButtonElement | null)
+					  || (seg.querySelector('.seg[data-value="setup"]') as HTMLButtonElement | null);
+			const buttons = Array.from(seg.querySelectorAll('.seg') as NodeListOf<HTMLButtonElement>);
+			buttons.forEach(b => b.classList.toggle('active', b === repl));
+		}
+	} catch {}
+}
+
+function ensureVisibleToolSubtabActive() {
+	try {
+		const subtabs = Array.from(document.querySelectorAll('#toolTabs .subtab')) as HTMLElement[];
+		if (!subtabs.length) return;
+		const isVisible = (el: HTMLElement) => el.style.display !== 'none';
+		let active = subtabs.find(t => t.classList.contains('active')) || null;
+		if (!active || !isVisible(active)) {
+			const pref = ['tool-mode','tool-summary'];
+			let target: HTMLElement | null = null;
+			for (const id of pref) {
+				const t = document.querySelector(`#toolTabs .subtab[data-target="${id}"]`) as HTMLElement | null;
+				if (t && isVisible(t)) { target = t; break; }
+			}
+			if (!target) target = subtabs.find(isVisible) || null;
+			target?.click();
+		}
+	} catch {}
+}
+
 function applyAdditionalToolsVisibility() {
 	const chk = document.getElementById('additionalTools') as HTMLInputElement | null;
 	const show = !chk || !!chk.checked;
@@ -100,6 +138,8 @@ function applyAdditionalToolsVisibility() {
 		const panel = document.getElementById(id) as HTMLElement | null;
 		if (panel) panel.style.display = show ? panel.style.display : 'none';
 	});
+	// Also update availability of WiFi option in Mode segmented control
+	updateModeSegVisibility();
 	// If current active subtab is hidden, switch to a safe one
 	const active = document.querySelector('#toolTabs .subtab.active') as HTMLElement | null;
 	if (active && ids.includes(active.getAttribute('data-target') || '')) {
@@ -107,6 +147,8 @@ function applyAdditionalToolsVisibility() {
 					  || (document.querySelector('#toolTabs .subtab[data-target="tool-summary"]') as HTMLElement | null);
 		fallback?.click();
 	}
+	// Ensure there is an active visible subtab
+	ensureVisibleToolSubtabActive();
 }
 
 try {
@@ -119,8 +161,27 @@ try {
 			else if (pref === '1') addToggle.checked = true;
 		} catch {}
 		addToggle.addEventListener('change', () => {
-			try { localStorage.setItem('additionalTools', addToggle.checked ? '1' : '0'); } catch {}
-			applyAdditionalToolsVisibility();
+			if (addToggle.checked) {
+				// If enabling, require explicit confirmation once
+				const ov = document.getElementById('additionalToolsOverlay') as HTMLElement | null;
+				const ok = document.getElementById('additionalToolsConfirm') as HTMLButtonElement | null;
+				const cancel = document.getElementById('additionalToolsCancel') as HTMLButtonElement | null;
+				const showOverlay = () => { if (ov) ov.style.display = 'flex'; };
+				const hideOverlay = () => { if (ov) ov.style.display = 'none'; };
+				const onCancel = () => { if (cancel) cancel.disabled = true; try { hideOverlay(); } finally { addToggle.checked = false; localStorage.setItem('additionalTools','0'); cancel && (cancel.disabled = false); applyAdditionalToolsVisibility(); } };
+				const onConfirm = () => { if (ok) ok.disabled = true; try { hideOverlay(); } finally { localStorage.setItem('additionalTools','1'); applyAdditionalToolsVisibility(); ok && (ok.disabled = false); } };
+				if (ov && ok && cancel) {
+					showOverlay();
+					cancel.addEventListener('click', onCancel, { once: true });
+					ok.addEventListener('click', onConfirm, { once: true });
+				} else {
+					// Fallback: no overlay found -> revert
+					addToggle.checked = false; localStorage.setItem('additionalTools','0'); applyAdditionalToolsVisibility();
+				}
+			} else {
+				try { localStorage.setItem('additionalTools', '0'); } catch {}
+				applyAdditionalToolsVisibility();
+			}
 		});
 		applyAdditionalToolsVisibility();
 	}
@@ -204,6 +265,10 @@ function initDeviceModePanel() {
 	const seg = panel.querySelector('#devModeSeg') as HTMLElement | null;
 	const applyBtn = document.getElementById('devModeApplyBtn') as HTMLButtonElement | null;
 	const msg = document.getElementById('devModeMsg');
+	// Ensure WiFi option follows Additional Tools visibility
+	updateModeSegVisibility();
+	const addToggle = document.getElementById('additionalTools') as HTMLInputElement | null;
+	addToggle?.addEventListener('change', () => { updateModeSegVisibility(); });
 	const refresh = async () => {
 		if (!(window as any).isConnected) return; try { currentEl && (currentEl.textContent = '…'); } catch {}
 		await ensureTransportConnected();
@@ -211,7 +276,11 @@ function initDeviceModePanel() {
 		const mode = await sendAndExtract(state.transport!, 'get_device_mode');
 		currentEl && (currentEl.textContent = String(mode));
 		const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
-		buttons.forEach(b => b.classList.toggle('active', b.dataset.value === mode));
+		// If WiFi option is hidden, avoid activating it visually
+		const chk = document.getElementById('additionalTools') as HTMLInputElement | null;
+		const wifiHidden = chk && !chk.checked;
+		const targetValue = (wifiHidden && mode === 'wifi') ? 'uvc' : String(mode);
+		buttons.forEach(b => b.classList.toggle('active', b.dataset.value === targetValue));
 		hidePanelBusy(panel);
 	};
 	if (seg) seg.addEventListener('click', (e) => {
@@ -219,9 +288,24 @@ function initDeviceModePanel() {
 		const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
 		buttons.forEach(b => b.classList.toggle('active', b === t));
 	});
+	// When Tools main tab is opened and Mode subtab is the active one, refresh
+	const toolsTab = document.querySelector('#tabs .tab[data-target="tools"]') as HTMLElement | null;
+	toolsTab?.addEventListener('click', () => {
+		// Make sure a visible subtab is active
+		ensureVisibleToolSubtabActive();
+		const activeSub = (document.querySelector('#toolTabs .subtab.active') as HTMLElement | null)?.dataset.target;
+		if (activeSub === 'tool-mode') { void refresh(); }
+	});
+	// Also refresh right after a successful connection event
+	document.addEventListener('ffvr-connected', () => { void refresh(); });
 	if (applyBtn) applyBtn.onclick = async () => {
-		const active = seg?.querySelector('.seg.active') as HTMLElement | null;
-		const value = (active?.getAttribute('data-value') as any) || 'wifi';
+		const buttons = Array.from((seg?.querySelectorAll('.seg') || []) as NodeListOf<HTMLButtonElement>);
+		const active = seg?.querySelector('.seg.active') as HTMLButtonElement | null;
+		let value = (active?.getAttribute('data-value') as any) || '';
+		if (!value) {
+			const firstVisible = buttons.find(b => (b as HTMLElement).style.display !== 'none');
+			value = (firstVisible?.dataset.value as any) || 'setup';
+		}
 		await ensureTransportConnected();
 		showPanelBusy(panel, 'Applying mode…');
 		try {
@@ -467,24 +551,24 @@ function initUpdatePanel() {
 			actBoot && (actBoot.style.display = 'none');
 			return;
 		}
+		// Always compute UI from known connection mode first
+		const isBoot = (state as any).connectionMode === 'boot';
+		if (lbl) lbl.textContent = isBoot ? 'Boot mode' : 'Not boot mode';
+		if (isBoot) {
+			hintRuntime && (hintRuntime.style.display = 'none');
+			actRuntime && (actRuntime.style.display = 'none');
+			actBoot && (actBoot.style.display = 'flex');
+		} else {
+			hintRuntime && (hintRuntime.style.display = 'flex');
+			actRuntime && (actRuntime.style.display = 'flex');
+			actBoot && (actBoot.style.display = 'none');
+		}
+		// Optionally try to ping device for side-effects; ignore failures
 		try {
 			await ensureTransportConnected();
 			showPanelBusy(body, 'Reading status…');
-			// Query device mode (not used in label anymore, but keep call in case of side-effects)
 			await sendAndExtract(state.transport!, 'get_device_mode');
-			const isBoot = (state as any).connectionMode === 'boot';
-			if (lbl) lbl.textContent = isBoot ? 'Boot mode' : 'Not boot mode';
-			if (isBoot) {
-				hintRuntime && (hintRuntime.style.display = 'none');
-				actRuntime && (actRuntime.style.display = 'none');
-				actBoot && (actBoot.style.display = 'flex');
-			} else {
-				// runtime
-				hintRuntime && (hintRuntime.style.display = 'flex');
-				actRuntime && (actRuntime.style.display = 'flex');
-				actBoot && (actBoot.style.display = 'none');
-			}
-		} catch {} finally { hidePanelBusy(body); }
+		} catch { /* ignore */ } finally { hidePanelBusy(body); }
 	};
 	btnSwitch && (btnSwitch.onclick = async () => {
 		try {

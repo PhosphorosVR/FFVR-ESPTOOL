@@ -198,6 +198,8 @@ th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .overlay-content { max-width: 560px; width: 100%; padding: 20px; border-radius: 12px; background: linear-gradient(180deg, var(--panel), #0f1520); border: 1px solid var(--border); box-shadow: 0 20px 50px rgba(0,0,0,.5); text-align: center; }
 .overlay-content h3 { margin: 0 0 8px 0; }
 .overlay-content p { margin: 8px 0 16px 0; color: var(--muted); }
+/* Make danger button stand out in overlays */
+.overlay .btn-danger { background: linear-gradient(180deg, #ff7a7a, #e05555); border-color: #932b2b; }
 
 /* Panel busy overlay (centered in a tool panel or card-body) */
 .has-panel-busy { position: relative; }

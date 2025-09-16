@@ -275,6 +275,20 @@
       </svg>
       <span id="globalBusyText">Working…</span>
     </div>
+    <!-- Overlay: Additional Tools warning -->
+    <div id="additionalToolsOverlay" style="display:none;" class="overlay">
+      <div class="overlay-content">
+        <h3>Warning</h3>
+        <p>
+          Using these additional tools (WiFi, Name, LED) with FaceFocusVR hardware may cause malfunction or lock you out of the device.
+          Proceed only if you fully understand the risks.
+        </p>
+        <div class="row" style="justify-content:center; gap:12px;">
+          <button id="additionalToolsCancel" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="additionalToolsConfirm" class="btn btn-danger" type="button">I understand</button>
+        </div>
+      </div>
+    </div>
     <style>
       @keyframes spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
     </style>
