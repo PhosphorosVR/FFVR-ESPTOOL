@@ -55,7 +55,17 @@ export async function sendCommand(
   const label = nice[String(command)] || 'Working…';
   try { showBusy(label); } catch {}
   try {
-    return await sendJsonCommand(transport, command, params, timeoutMs);
+    let resp = await sendJsonCommand(transport, command, params, timeoutMs);
+    // Auto-retry once on device-side JSON framing error
+    try {
+      const errMsg = String((resp as any)?.error || '');
+      if (errMsg && /invalid json/i.test(errMsg)) {
+        try { dbg(`Retrying command '${command}' after error: ${errMsg}`, 'info'); } catch {}
+        await new Promise(r => setTimeout(r, 150));
+        resp = await sendJsonCommand(transport, command, params, timeoutMs);
+      }
+    } catch {}
+    return resp;
   } finally {
     try { hideBusy(); } catch {}
   }

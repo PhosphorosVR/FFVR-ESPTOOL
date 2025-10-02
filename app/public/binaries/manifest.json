@@ -3,9 +3,9 @@
     {
       "name": "FFVR",
       "items": [
-        { "file": "FFVR Eye L [0.0.1].bin", "address": "0x0" },
-        { "file": "FFVR Face [0.0.1].bin", "address": "0x0" },
-        { "file": "FFVR Eye R [0.0.1].bin", "address": "0x0" }
+        { "file": "FFVR Eye L [0.1.0].bin", "address": "0x0" },
+        { "file": "FFVR Face [0.1.0].bin", "address": "0x0" },
+        { "file": "FFVR Eye R [0.1.0].bin", "address": "0x0" }
         
       ]
     },

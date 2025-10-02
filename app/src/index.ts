@@ -1,7 +1,7 @@
 /* App orchestrator: wires UI controls to modules in core/, ui/, and features/ */
 
 import { state } from "./core/state";
-import { initDebugPanel } from "./ui/debug";
+import { initDebugPanel, dbg } from "./ui/debug";
 import { updateConnStatusDot, showConnectAlert } from "./ui/alerts";
 import { el, setTabsEnabled } from "./ui/dom";
 import { initTerminal, getTerminal, startConsole, stopConsole } from "./ui/terminal";
@@ -189,12 +189,41 @@ const consoleStopButton = el.consoleStopButton();
 if (consoleStartButton) consoleStartButton.onclick = async () => { await startConsole(); };
 if (consoleStopButton) consoleStopButton.onclick = () => { stopConsole(); };
 
-// Program button
+// Program button (now: auto erase before flashing)
 const programButton = el.programButton();
 if (programButton) (programButton as any).onclick = async () => {
 	const table = el.table();
 	if (!table) return;
-	await performFlash(table, el.prebuiltSelect(), el.alertDiv(), getTerminal());
+	const btn = programButton as HTMLButtonElement;
+	btn.disabled = true;
+	const alertDiv = el.alertDiv();
+	const alertMsg = document.getElementById('programAlertMsg');
+	try {
+		// Auto erase sequence (only if bootloader / esploader available)
+		if ((state as any).connectionMode === 'boot' && state.esploader) {
+			try { dbg('Auto erase before flash', 'info'); } catch {}
+			try {
+				// Switch to console tab so user sees progress (same logic as manual erase)
+				try {
+					const tabs = Array.from(document.querySelectorAll('#tabs .tab')) as HTMLElement[];
+					const consoleTab = tabs.find(t => t.dataset.target === 'console');
+					if (consoleTab && !consoleTab.classList.contains('disabled')) consoleTab.click();
+				} catch {}
+				await state.esploader.eraseFlash();
+				try { dbg('Erase flash done (auto)', 'info'); } catch {}
+			} catch (e: any) {
+				try { dbg(`Auto erase failed: ${e?.message || e}`, 'info'); } catch {}
+				if (alertDiv && alertMsg) {
+					(alertMsg as any).textContent = 'Erase failed – aborting flash.';
+					(alertDiv as any).style.display = 'block';
+				}
+				return; // Abort flashing if erase fails
+			}
+		}
+		await performFlash(table, el.prebuiltSelect(), alertDiv, getTerminal());
+	} finally {
+		btn.disabled = false;
+	}
 };
 
 // Add file row
