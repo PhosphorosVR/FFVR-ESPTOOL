@@ -112,17 +112,10 @@ function ensureVisibleToolSubtabActive() {
 	try {
 		const subtabs = Array.from(document.querySelectorAll('#toolTabs .subtab')) as HTMLElement[];
 		const vis = (el: HTMLElement) => el.style.display !== 'none';
-		let active = subtabs.find(t => t.classList.contains('active'));
-		if (!active || !vis(active)) {
-			const pref = ['tool-summary','tool-mode'];
-			let target: HTMLElement | null = null;
-			for (const id of pref) {
-				const t = document.querySelector(`#toolTabs .subtab[data-target="${id}"]`) as HTMLElement | null;
-				if (t && vis(t)) { target = t; break; }
-			}
-			if (!target) target = subtabs.find(vis) || null;
-			target?.click();
-		}
+		// Modified: do not auto-activate any subtab; wait for user interaction.
+		// If an active tab exists but became hidden, just remove its active state.
+		const active = subtabs.find(t => t.classList.contains('active'));
+		if (active && !vis(active)) active.classList.remove('active');
 	} catch {}
 }
 
@@ -478,8 +471,7 @@ function initSummaryPanel() {
 	}
 	// Auto-load on show + persist last active tool subtab
 	;(window as any).autoLoadSummary = refreshSummary;
-	const isActive = (document.querySelector('#toolTabs .subtab.active') as HTMLElement | null)?.dataset.target === 'tool-summary';
-	if (isActive) refreshSummary();
+	// No default auto-load now; summary refresh occurs when user clicks the tab.
 }
 
 initMdnsPanel();
@@ -822,6 +814,21 @@ function initUpdatePanel() {
 	});
 
 	document.addEventListener('ffvr-connected', () => { refresh(); });
+	// Fix: stale upgrade status when switching between different devices within one session.
+	// When a new runtime connection is established, previously cached board/version info from another device
+	// could incorrectly show "Up to date". We clear the cache so detection + manifest mapping re-run fresh.
+	document.addEventListener('ffvr-connected', () => {
+		try {
+			if ((state as any).connectionMode === 'runtime') {
+				sessionStorage.removeItem('ffvr_detected_board');
+				sessionStorage.removeItem('ffvr_device_version');
+				sessionStorage.removeItem('ffvr_latest_version');
+				sessionStorage.removeItem('ffvr_recommended_value');
+				// Trigger a second refresh after clearing so runtime panel re-populates with new detection
+				setTimeout(() => { try { refresh(); } catch {} }, 0);
+			}
+		} catch {}
+	}, { once: false });
 	refresh();
 }
 
