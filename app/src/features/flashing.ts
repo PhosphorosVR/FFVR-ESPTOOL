@@ -157,19 +157,31 @@ export async function performFlash(table: HTMLTableElement, prebuiltSelect: HTML
     } as FlashOptions;
     await state.esploader!.writeFlash(flashOptions);
     await state.esploader!.after();
+    try { term?.writeln?.('\r\n[Flashing successful – please power cycle]'); } catch {}
+    // Show overlay similar style to powerCycleOverlay
     try {
-      (alertMsg as any).textContent = 'Flashing successful. Please reconnect.';
-      (alertDiv as any).classList.add('success');
-      (alertDiv as any).style.display = 'block';
-    } catch {}
-    try {
-      term?.writeln?.('\r\n[Flashing successful]');
-    } catch {}
-    try {
-      setTimeout(() => {
-        try { sessionStorage.setItem('flashReload', '1'); } catch {}
-        window.location.reload();
-      }, 1500);
+      const ov = document.getElementById('flashSuccessOverlay') as HTMLElement | null;
+      const btn = document.getElementById('flashSuccessDismiss') as HTMLButtonElement | null;
+      if (ov && btn) {
+        ov.style.display = 'flex';
+        btn.onclick = async () => {
+          btn.disabled = true;
+          try {
+            // After user confirms they've power cycled, trigger disconnect handling so UI resets
+            const { handlePortDisconnected } = await import('../core/serial');
+            await handlePortDisconnected('Flashing complete, user power-cycled');
+          } catch {}
+          finally {
+            ov.style.display = 'none';
+            btn.disabled = false;
+          }
+        };
+      } else {
+        // Fallback old alert if overlay missing
+        (alertMsg as any).textContent = 'Flashing successful. Power cycle the device.';
+        (alertDiv as any).classList.add('success');
+        (alertDiv as any).style.display = 'block';
+      }
     } catch {}
   } catch (e: any) {
     dbg(`Flash error ${e?.message || e}`,'info');
