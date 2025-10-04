@@ -287,7 +287,13 @@ function initDeviceModePanel() {
 	const applyBtn = document.getElementById('devModeApplyBtn') as HTMLButtonElement | null;
 	const msg = document.getElementById('devModeMsg');
 	async function refresh() {
-		if (!(window as any).isConnected) return; try { currentEl && (currentEl.textContent = '…'); } catch {}
+		if (!(window as any).isConnected) return;
+		// Prevent querying device mode while in boot mode (breaks flashing)
+		if ((state as any).connectionMode !== 'runtime') {
+			try { currentEl && (currentEl.textContent = '—'); } catch {}
+			return;
+		}
+		try { currentEl && (currentEl.textContent = '…'); } catch {}
 		await ensureTransportConnected(); const mode = await sendAndExtract(state.transport!, 'get_device_mode');
 		currentEl && (currentEl.textContent = String(mode));
 		updateModeSegVisibility();
@@ -339,7 +345,13 @@ function initDeviceModePanel() {
 	};
 	refresh();
 	const devTab = document.querySelector('#toolTabs .subtab[data-target="tool-mode"]');
-	devTab?.addEventListener('click', () => { refresh(); });
+	devTab?.addEventListener('click', () => { if ((state as any).connectionMode === 'runtime') refresh(); });
+	// Auto refresh only in runtime mode
+	document.addEventListener('ffvr-connected', () => { if ((state as any).connectionMode === 'runtime') refresh(); });
+	try {
+		const toolsMainTab = document.querySelector('#tabs .tab[data-target="tools"]');
+		toolsMainTab?.addEventListener('click', () => { if ((state as any).connectionMode === 'runtime') setTimeout(() => { refresh(); }, 60); });
+	} catch {}
 }
 
 function initLedPanel() {
@@ -453,9 +465,13 @@ function initSummaryPanel() {
 			if (sumName) sumName.textContent = String(name || '—');
 		} catch {}
 		try {
-			const who = await sendAndExtract(state.transport!, 'get_who_am_i');
-			if (who?.who_am_i && sumDevice) sumDevice.textContent = String(who.who_am_i);
-			if (who?.version && sumVersion) sumVersion.textContent = String(who.version);
+				const who = await sendAndExtract(state.transport!, 'get_who_am_i');
+				if (who?.who_am_i && sumDevice) sumDevice.textContent = String(who.who_am_i);
+				if (who?.version) {
+					if (sumVersion) sumVersion.textContent = String(who.version);
+					try { sessionStorage.setItem('ffvr_device_version', String(who.version)); } catch {}
+					try { localStorage.setItem('ffvr_device_version', String(who.version)); } catch {}
+				}
 		} catch {}
 		try {
 			const mode = await sendAndExtract(state.transport!, 'get_device_mode');
@@ -489,22 +505,35 @@ function initUpdatePanel() {
 	const body = panel.querySelector('.card-body') as HTMLElement | null;
 	if (!body) return;
 	body.innerHTML = `
-		<div class="row mt-8" id="updateModeRow"><span class="small muted">Device:</span><span class="v" id="updateModeLabel">—</span></div>
-		<div class="row mt-12 small muted" id="updateHintRuntime" style="display:none;">Switch to boot mode to flash firmware.</div>
-		<div class="row mt-12" id="updateActionsRuntime" style="display:none; gap: 8px;">
-			<input class="btn btn-secondary" type="button" id="btnSwitchToBoot" value="Switch to boot mode" />
+		<div class="row mt-8" id="updateModeRow"><span class="small muted">Mode:</span><span class="v" id="updateModeLabel">—</span></div>
+		<div class="row mt-12 small" id="runtimeUpgradeStatusRow" style="display:none;">
+			<span id="runtimeUpgradeStatus" class="upgrade-flag flag-pending">—</span>
 		</div>
-		<div class="row mt-12" id="updateActionsBoot" style="display:none;">
-			<input class="btn btn-primary" type="button" id="btnGoToFlash" value="Continue to flashing" />
+		<div class="row mt-28" id="updateActionsRuntime" style="display:none; gap: 8px;">
+			<input class="btn btn-switch-boot" type="button" id="btnSwitchToBoot" value="Switch to boot mode & Upgrade" title="Switch to boot mode and start upgrade" />
 		</div>
-		<div class="row mt-24 small muted" style="opacity:.85;" id="updateFooterNote">After flashing, power‑cycle the device to return to runtime mode.</div>
+		<div class="row mt-12" id="updateActionsBoot" style="display:none; flex-direction:column; align-items:flex-start; gap:12px;">
+			<div class="upgrade-meta small" style="display:flex; flex-direction:column; gap:8px;">
+				<div>Board: <span class="v" id="upgradeBoard">—</span></div>
+				<div>Your version: <span class="v" id="upgradeCurrent">—</span></div>
+				<div>Latest version: <span class="v" id="upgradeLatest">—</span></div>
+				<div id="upgradeStatus" class="small" style="opacity:.85;">—</div>
+			</div>
+			<input class="btn btn-switch-boot" type="button" id="btnDoUpgrade" value="Upgrade" />
+			<!-- Advanced flashing removed per request -->
+		</div>
 	`;
 	const lbl = document.getElementById('updateModeLabel');
-	const hintRuntime = document.getElementById('updateHintRuntime');
 	const actRuntime = document.getElementById('updateActionsRuntime');
 	const actBoot = document.getElementById('updateActionsBoot');
 	const btnSwitch = document.getElementById('btnSwitchToBoot') as HTMLInputElement | null;
-	const btnFlash = document.getElementById('btnGoToFlash') as HTMLInputElement | null;
+	const btnUpgrade = document.getElementById('btnDoUpgrade') as HTMLInputElement | null;
+	const upBoard = document.getElementById('upgradeBoard') as HTMLElement | null;
+	const upCurrent = document.getElementById('upgradeCurrent') as HTMLElement | null;
+	const upLatest = document.getElementById('upgradeLatest') as HTMLElement | null;
+	const upStatus = document.getElementById('upgradeStatus') as HTMLElement | null;
+	const runtimeStatusRow = document.getElementById('runtimeUpgradeStatusRow') as HTMLElement | null;
+	const runtimeStatus = document.getElementById('runtimeUpgradeStatus') as HTMLElement | null;
 	// Automatic discovery now integrated into switch-to-boot; button removed.
 
 	async function autoDiscoverBoard(): Promise<string | null> {
@@ -516,7 +545,11 @@ function initUpdatePanel() {
 			if (existing) return existing;
 			await ensureTransportConnected();
 			let board: string | null = null;
-			try { const who = await sendAndExtract(state.transport!, 'get_who_am_i'); if (who?.who_am_i) board = String(who.who_am_i).toLowerCase(); } catch {}
+			try {
+				const who = await sendAndExtract(state.transport!, 'get_who_am_i');
+				if (who?.who_am_i) board = String(who.who_am_i).toLowerCase();
+				if (who?.version) { try { sessionStorage.setItem('ffvr_device_version', String(who.version)); } catch {} try { localStorage.setItem('ffvr_device_version', String(who.version)); } catch {} }
+			} catch {}
 			if (!board) { try { const name = await sendAndExtract(state.transport!, 'get_mdns_name'); if (name) board = String(name).toLowerCase(); } catch {} }
 			if (board) {
 				if (/eye[_-]?l/.test(board)) board = 'facefocusvr_eye_l';
@@ -535,18 +568,179 @@ function initUpdatePanel() {
 		} catch { return null; }
 	}
 
+	function mapBoardLabel(id: string | null): string {
+		if (!id) return '—';
+		if (id === 'facefocusvr_face') return 'FFVR Face';
+		if (id === 'facefocusvr_eye_l') return 'FFVR Eye L';
+		if (id === 'facefocusvr_eye_r') return 'FFVR Eye R';
+		return id;
+	}
+
+	function parseVersionFromLabel(label: string | null): string | null {
+		if (!label) return null;
+		const m = label.match(/\[(\d+\.\d+\.\d+)\]/);
+		return m ? m[1] : null;
+	}
+
+	function compareSemver(a: string | null, b: string | null): number {
+		if (!a || !b) return 0;
+		const pa = a.split('.').map(n=>parseInt(n,10));
+		const pb = b.split('.').map(n=>parseInt(n,10));
+		for (let i=0;i<3;i++) { const da = pa[i]||0, db = pb[i]||0; if (da>db) return 1; if (da<db) return -1; }
+		return 0;
+	}
+
+	function deriveLatestForBoard(board: string | null): { version: string | null; optionValue: string | null } {
+		try {
+			const sel = document.getElementById('prebuiltSelect') as HTMLSelectElement | null;
+			if (!sel) return { version: null, optionValue: null };
+			const group = sel.querySelector('optgroup[label="FFVR"]') as HTMLOptGroupElement | null;
+			if (!group) return { version: null, optionValue: null };
+			let best: { v: string; opt: HTMLOptionElement } | null = null;
+			const want = board;
+			const opts = Array.from(group.querySelectorAll('option')) as HTMLOptionElement[];
+			for (const o of opts) {
+				const lbl = o.textContent || '';
+				// Determine board mapping from text
+				let mapped: string | null = null;
+				if (/face/i.test(lbl)) mapped = 'facefocusvr_face';
+				else if (/eye\s*L/i.test(lbl)) mapped = 'facefocusvr_eye_l';
+				else if (/eye\s*R/i.test(lbl)) mapped = 'facefocusvr_eye_r';
+				if (mapped && mapped === want) {
+					const ver = parseVersionFromLabel(lbl);
+					if (ver) {
+						if (!best || compareSemver(ver, best.v) > 0) best = { v: ver, opt: o };
+					}
+				}
+			}
+			return best ? { version: best.v, optionValue: best.opt.value } : { version: null, optionValue: null };
+		} catch { return { version: null, optionValue: null }; }
+	}
+
 	async function refresh() {
 		try {
 			const isBoot = (state as any).connectionMode === 'boot';
 			if (lbl) lbl.textContent = isBoot ? 'Boot mode' : 'Runtime mode';
-			if (isBoot) {
-				if (hintRuntime) hintRuntime.style.display = 'none';
+				if (isBoot) {
 				if (actRuntime) actRuntime.style.display = 'none';
 				if (actBoot) actBoot.style.display = 'flex';
-			} else {
-				if (hintRuntime) { hintRuntime.style.display = 'flex'; }
+					// Hide runtime status row in boot mode to avoid duplicate upgrade status
+					if ((runtimeStatusRow)) runtimeStatusRow.style.display = 'none';
+				try {
+					const boardId = sessionStorage.getItem('ffvr_detected_board');
+					let currentVer = sessionStorage.getItem('ffvr_device_version');
+					if (!currentVer) { try { currentVer = localStorage.getItem('ffvr_device_version'); } catch {} }
+					// If no board detected, gray out tab & button
+					const updateTab = document.querySelector('#tabs .tab[data-target="update"]') as HTMLElement | null;
+					if (!boardId) {
+						if (updateTab) updateTab.classList.add('disabled');
+						if (btnUpgrade) { btnUpgrade.disabled = true; btnUpgrade.title = 'No board detected'; }
+						if (upBoard) upBoard.textContent = '—';
+						if (upCurrent) upCurrent.textContent = '—';
+						if (upLatest) upLatest.textContent = '—';
+						if (upStatus) { upStatus.textContent = 'Detect board in runtime first'; upStatus.className = 'upgrade-flag flag-pending'; }
+						return;
+					} else if (updateTab) {
+						updateTab.classList.remove('disabled');
+					}
+					// Derive latest from manifest
+					const latest = deriveLatestForBoard(boardId);
+					if (latest.optionValue) { sessionStorage.setItem('ffvr_recommended_value', latest.optionValue); }
+					if (latest.version) { sessionStorage.setItem('ffvr_latest_version', latest.version); }
+					if (upBoard) upBoard.textContent = mapBoardLabel(boardId);
+					if (upCurrent) upCurrent.textContent = currentVer || '—';
+					if (upLatest) upLatest.textContent = latest.version || '—';
+						if (upStatus) {
+							if (currentVer && latest.version) {
+								const cmp = compareSemver(latest.version, currentVer);
+								if (cmp > 0) {
+									upStatus.textContent = `Upgrade available (${currentVer} → ${latest.version})`;
+									upStatus.className = 'upgrade-flag flag-upgrade';
+									if (btnUpgrade) { btnUpgrade.disabled = false; btnUpgrade.title = 'Flash latest firmware'; btnUpgrade.classList.add('upgrade-ready'); }
+								} else if (cmp === 0) {
+									upStatus.textContent = 'Up to date';
+									upStatus.className = 'upgrade-flag flag-ok';
+									if (btnUpgrade) { btnUpgrade.disabled = true; btnUpgrade.title = 'Already latest version'; btnUpgrade.classList.remove('upgrade-ready'); }
+								} else {
+									upStatus.textContent = 'Development build';
+									upStatus.className = 'upgrade-flag flag-dev';
+									if (btnUpgrade) { btnUpgrade.disabled = false; btnUpgrade.title = 'Flash anyway'; btnUpgrade.classList.remove('upgrade-ready'); }
+								}
+							} else {
+								upStatus.textContent = '—';
+								upStatus.className = 'upgrade-flag flag-pending';
+								if (btnUpgrade) { btnUpgrade.disabled = !latest.optionValue; btnUpgrade.classList.remove('upgrade-ready'); }
+							}
+						}
+				} catch {}
+				} else {
 				if (actRuntime) actRuntime.style.display = 'flex';
 				if (actBoot) actBoot.style.display = 'none';
+				// NEW: In runtime mode already check if an upgrade is available
+				try {
+					if (btnSwitch) { btnSwitch.disabled = true; btnSwitch.title = 'Connect or detect device…'; }
+					if (runtimeStatusRow) runtimeStatusRow.style.display = 'none';
+					// Nur wenn verbunden & im Runtime-Modus versuchen wir Board + Version zu ermitteln
+					if ((window as any).isConnected && (state as any).connectionMode === 'runtime') {
+						// Falls noch kein Board ermittelt wurde: jetzt versuchen (einmalig pro Session)
+						let boardId = sessionStorage.getItem('ffvr_detected_board');
+						if (!boardId) {
+							try { boardId = await autoDiscoverBoard(); } catch {}
+						}
+						// Aktuelle Version ermitteln / aus Cache holen
+						let currentVer = sessionStorage.getItem('ffvr_device_version');
+						if (!currentVer) { try { currentVer = localStorage.getItem('ffvr_device_version'); } catch {} }
+						if (!currentVer) {
+							// Versuche direkt auszulesen (who_am_i)
+							try {
+								await ensureTransportConnected();
+								const who = await sendAndExtract(state.transport!, 'get_who_am_i');
+								if (who?.version) { currentVer = String(who.version); sessionStorage.setItem('ffvr_device_version', currentVer); }
+							} catch {}
+						}
+						// Manifest muss geladen sein, deriveLatestForBoard liefert sonst null
+						const latest = deriveLatestForBoard(boardId);
+						if (latest.version) { sessionStorage.setItem('ffvr_latest_version', latest.version); }
+						if (boardId && latest.version && currentVer) {
+							const cmp = compareSemver(latest.version, currentVer);
+							if (cmp > 0) {
+								// Upgrade available -> enable button
+								if (btnSwitch) { btnSwitch.disabled = false; btnSwitch.title = `Upgrade available (${currentVer} → ${latest.version})`; btnSwitch.classList.add('upgrade-ready'); }
+								if (runtimeStatusRow && runtimeStatus) {
+									runtimeStatusRow.style.display = 'flex';
+									runtimeStatus.textContent = `Upgrade available (${currentVer} → ${latest.version})`;
+									runtimeStatus.className = 'upgrade-flag flag-upgrade';
+								}
+							} else if (cmp === 0) {
+								if (btnSwitch) { btnSwitch.disabled = true; btnSwitch.title = 'Already latest version'; btnSwitch.classList.remove('upgrade-ready'); }
+								if (runtimeStatusRow && runtimeStatus) {
+									runtimeStatusRow.style.display = 'flex';
+									runtimeStatus.textContent = 'Up to date';
+									runtimeStatus.className = 'upgrade-flag flag-ok';
+								}
+							} else { // current > latest (dev build)
+								if (btnSwitch) { btnSwitch.disabled = true; btnSwitch.title = 'Firmware is newer than release'; btnSwitch.classList.remove('upgrade-ready'); }
+								if (runtimeStatusRow && runtimeStatus) {
+									runtimeStatusRow.style.display = 'flex';
+									runtimeStatus.textContent = 'Development build';
+									runtimeStatus.className = 'upgrade-flag flag-dev';
+								}
+							}
+						} else {
+							// Unvollständige Daten – Button deaktivieren
+							if (btnSwitch) {
+								btnSwitch.disabled = true;
+								btnSwitch.title = boardId ? 'No version data available' : 'Board not detected';
+								btnSwitch.classList.remove('upgrade-ready');
+							}
+							if (runtimeStatusRow && runtimeStatus) {
+								runtimeStatusRow.style.display = 'flex';
+								runtimeStatus.textContent = boardId ? '—' : 'Board not detected';
+								runtimeStatus.className = 'upgrade-flag flag-pending';
+							}
+						}
+					}
+				} catch {}
 			}
 		} catch {}
 	}
@@ -583,10 +777,60 @@ function initUpdatePanel() {
 		} catch {}
 	});
 
-	btnFlash && (btnFlash.onclick = () => {
-		// Navigate to flashing tab
-		const tabProgram = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;
-		tabProgram?.click();
+	btnUpgrade && (btnUpgrade.onclick = async () => {
+		try {
+			if ((state as any).connectionMode !== 'boot') return;
+			const sel = document.getElementById('prebuiltSelect') as HTMLSelectElement | null;
+			let recommended = sessionStorage.getItem('ffvr_recommended_value');
+			if (sel) {
+				if (!recommended) {
+					const board = sessionStorage.getItem('ffvr_detected_board');
+					if (board) {
+						const ffvrGroup = sel.querySelector('optgroup[label="FFVR"]') as HTMLOptGroupElement | null;
+						if (ffvrGroup) {
+							const opt = ffvrGroup.querySelector(`option[data-board="${board}"]`) as HTMLOptionElement | null;
+							if (opt) recommended = opt.value;
+						}
+					}
+				}
+				if (!recommended) {
+					const first = sel.querySelector('optgroup[label="FFVR"] option') as HTMLOptionElement | null;
+					if (first) recommended = first.value;
+				}
+				if (!recommended) {
+					try { const { showConnectAlert } = await import('./ui/alerts'); showConnectAlert('No firmware recommendation available. Use advanced flashing.','error'); } catch {}
+					return;
+				}
+				if (sel.value !== recommended) {
+					sel.value = recommended;
+					sel.dispatchEvent(new Event('change'));
+				}
+				// Update versions if missing
+				try {
+					const opt = sel.querySelector(`option[value="${recommended}"]`) as HTMLOptionElement | null;
+					if (opt) {
+						const latestVer = parseVersionFromLabel(opt.textContent || '') || sessionStorage.getItem('ffvr_latest_version');
+						if (latestVer) { sessionStorage.setItem('ffvr_latest_version', latestVer); if (upLatest) upLatest.textContent = latestVer; }
+					}
+				} catch {}
+			}
+			const programBtn = el.programButton() as HTMLButtonElement | null;
+			if (!programBtn) return;
+			programBtn.disabled = true;
+			try {
+				if ((state as any).connectionMode === 'boot' && state.esploader) {
+					// Immediately switch to console/monitor tab so user sees erase & flash progress without delay
+					try {
+						const tabs = Array.from(document.querySelectorAll('#tabs .tab')) as HTMLElement[];
+						const consoleTab = tabs.find(t => t.dataset.target === 'console');
+						if (consoleTab && !consoleTab.classList.contains('disabled')) consoleTab.click();
+					} catch {}
+					try { dbg('Auto erase before upgrade', 'info'); } catch {}
+					try { await state.esploader.eraseFlash(); } catch (e:any) { dbg(`Auto erase failed: ${e?.message || e}`,'info'); return; }
+				}
+				await performFlash(el.table()!, el.prebuiltSelect(), el.alertDiv(), getTerminal());
+			} finally { programBtn.disabled = false; }
+		} catch {}
 	});
 
 	document.addEventListener('ffvr-connected', () => { refresh(); });

@@ -82,6 +82,12 @@ export function wireConnection(term: any) {
         state.connectionMode = 'runtime';
         state.chip = null;
         state.deviceMac = null;
+      } else {
+        // Try to fetch version info via who_am_i (if available through runtime JSON? skip if not)
+        try {
+          // Bootloader may not expose JSON; leave placeholder for future if available
+          // sessionStorage.setItem('ffvr_device_version', <value>) if retrievable
+        } catch {}
       }
 
       // Compose label parts
@@ -121,7 +127,8 @@ export function wireConnection(term: any) {
     const tabProgram = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;
     const tabUpdate = document.querySelector('#tabs .tab[data-target="update"]') as HTMLElement | null;
     if (state.connectionMode === 'boot') {
-      tabProgram?.click();
+      // Prefer showing update tab for Upgrade workflow
+      if (tabUpdate && !tabUpdate.classList.contains('disabled')) tabUpdate.click(); else tabProgram?.click();
       // Apply previously detected board firmware selection if stored
       try {
         const saved = sessionStorage.getItem('ffvr_detected_board');
@@ -152,14 +159,13 @@ export function wireConnection(term: any) {
               }
               let applied = false;
               if (targetOpt) {
-                sel.value = targetOpt.value;
-                sel.dispatchEvent(new Event('change'));
+                try { sessionStorage.setItem('ffvr_recommended_value', targetOpt.value); } catch {}
                 applied = true;
               }
               (async () => {
                 try {
                   const { showConnectAlert } = await import('../ui/alerts');
-                  if (applied) showConnectAlert(`Auto-selected firmware for ${saved}. Ready to flash.`, 'success');
+                  if (applied) showConnectAlert(`Detected board ${saved}. Upgrade available.`, 'success');
                   else showConnectAlert(`Detected board ${saved} – no matching firmware found in FFVR list.`, 'error');
                 } catch {}
               })();

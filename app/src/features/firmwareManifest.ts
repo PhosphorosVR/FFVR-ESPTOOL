@@ -243,24 +243,7 @@ export async function loadPrebuiltManifest() {
       }
     } catch {}
     renderPrebuiltSelect();
-    // After render, if a detected board is stored, try immediate selection (smoother than later timeout)
-    try {
-      const detected = sessionStorage.getItem('ffvr_detected_board');
-      if (detected) {
-        const sel = document.getElementById('prebuiltSelect') as HTMLSelectElement | null;
-        if (sel) {
-          const ogs = Array.from(sel.querySelectorAll('optgroup')) as HTMLOptGroupElement[];
-            for (const og of ogs) {
-              if (og.label === detected && og.children.length) {
-                const first = og.children[0] as HTMLOptionElement;
-                sel.value = first.value;
-                sel.dispatchEvent(new Event('change'));
-                break;
-              }
-            }
-        }
-      }
-    } catch {}
+  // No longer auto-select: recommendation stored in sessionStorage (ffvr_recommended_value)
   } catch (e) {
   dbg(`No prebuilt list or failed to load. ${((e as any)?.message ?? e)}`, 'info');
   }

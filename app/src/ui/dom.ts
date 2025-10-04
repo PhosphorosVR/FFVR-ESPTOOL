@@ -50,8 +50,8 @@ export function applyTabMode(mode: 'boot' | 'runtime' | null) {
     if (!mode) return;
     let enableTargets: string[] = [];
     if (mode === 'boot') {
-      // Bootloader: Flashing + Console erlaubt
-      enableTargets = ['program','console'];
+      // Bootloader: Upgrade (update) + Flashing (program) + Console
+      enableTargets = ['update','program','console'];
     } else {
       // Runtime: Tools + Update
       enableTargets = ['tools','update'];

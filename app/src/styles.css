@@ -1,3 +1,14 @@
+/* Upgrade status flags */
+.upgrade-flag { font-weight:600; padding:2px 8px; border-radius:12px; display:inline-block; font-size:12px; }
+.upgrade-flag.flag-upgrade { background:rgba(255,180,0,.15); color:#ffb400; }
+.upgrade-flag.flag-ok { background:rgba(0,180,90,.15); color:#00c070; }
+.upgrade-flag.flag-dev { background:rgba(140,90,255,.15); color:#b68bff; }
+.upgrade-flag.flag-pending { background:rgba(255,255,255,.08); color:#bbb; }
+/* Upgrade panel spacing adjustments */
+.upgrade-meta { --upgrade-gap:8px; gap:var(--upgrade-gap)!important; }
+.upgrade-meta .upgrade-flag { margin-top:4px; }
+#updateActionsBoot { margin-top: 20px; }
+#updateActionsBoot .upgrade-meta + input#btnDoUpgrade { margin-top: 20px; }
 /* FFVR web app UI styles */
 
 :root {
@@ -60,6 +71,29 @@ select, input[type="text"], input[type="number"], input[type="password"] { backg
 .btn-secondary { background: #1b2536; }
 .btn-danger { background: linear-gradient(180deg, #ff7a7a, #e05555); border-color: #932b2b; }
 .btn-warning { background: linear-gradient(180deg, #ffc76a, #f0a93e); border-color: #946b1d; color: #1a1205; }
+.btn-accent { background: linear-gradient(180deg, var(--accent), #179ab0); border-color: #147c8f; color:#041a1f; font-weight:600; }
+
+/* Subtle emphasis variants (toned down) */
+.btn-upgrade {
+  background: linear-gradient(180deg,#2a3544,#243240);
+  border-color:#324656;
+  font-weight:600;
+  color: #ffcf7a;
+}
+.btn-upgrade:hover { box-shadow:0 2px 8px -3px rgba(255,198,80,.25); filter:brightness(1.05); }
+.btn-upgrade:active { transform:translateY(1px); }
+
+.btn-switch-boot {
+  background: linear-gradient(180deg,#1c2835,#203040);
+  border-color:#2b4155;
+  font-weight:500;
+}
+.btn-switch-boot.upgrade-ready {
+  background:#1b3240;
+  border-color:#1d6a7c;
+  box-shadow:0 0 0 1px rgba(34,211,238,.25),0 2px 8px -3px rgba(34,211,238,.35);
+}
+.btn-switch-boot.upgrade-ready:hover { box-shadow:0 0 0 1px rgba(34,211,238,.35),0 3px 10px -3px rgba(34,211,238,.45); }
 
 .alert { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); border-left: 3px solid rgba(255, 107, 107, 0.6); color: var(--muted); padding: 8px 10px; border-radius: 8px; font-size: 13px; }
 .alert.success { border-left-color: rgba(47, 209, 128, 0.7); color: #cfeedd; }
