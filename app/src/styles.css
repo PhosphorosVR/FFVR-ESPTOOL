@@ -46,9 +46,11 @@ body {
 .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
 
 .card { background: linear-gradient(180deg, var(--panel), #0f1520); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
-.tabs + .card, .tabs + section.card { border-top-left-radius: 0; border-top-right-radius: 0; }
-/* Also remove top radius for any subsequent card panels so switching tabs (e.g. Update) does not show rounded gap */
-.tabs ~ .card { border-top-left-radius: 0; border-top-right-radius: 0; }
+.tabs + .card, .tabs + section.card { border-top-left-radius: 0; border-top-right-radius: var(--radius); }
+/* For subsequent panels (when inactive) keep their rounding so when activated they show rounded top except update's left */
+.tabs ~ .card { border-top-left-radius: var(--radius); border-top-right-radius: var(--radius); }
+/* Active update panel: keep top-left flat to align with its tab */
+section.card#update { border-top-left-radius: 0; }
 .card-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .card-title { margin: 0; font-size: 16px; }
 .card-body { padding: 16px; }
@@ -179,11 +181,12 @@ th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .tabs + .card, .tabs + section.card { position: relative; z-index: 1; }
 
 /* Tools subtabs (bubbles) */
-.subtabs { display: flex; gap: 8px; list-style: none; padding: 0; margin: 0 0 6px 0; flex-wrap: wrap; }
+/* Reduced vertical margins for tighter grouping; keep small top gap and even space around separator */
+.subtabs { display: flex; gap: 8px; list-style: none; padding: 0; margin: 4px 0 6px 0; flex-wrap: wrap; }
 .subtab { padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); cursor: pointer; background: #0f1520; font-size: 13px; }
 .subtab.active { background: var(--primary); border-color: #2a5cc0; color: #0b0f14; font-weight: 600; }
-/* Separator and consistent spacing between bubbles and content */
-.tool-panels { border-top: 1px solid rgba(255,255,255,0.06); margin-top: 6px; padding-top: 8px; }
+/* Removed top separator line for cleaner look */
+.tool-panels { margin-top: 0; padding-top: 4px; }
 
 #debugPanel { margin-top: 32px; }
 .debug-log { background: #0a0f18; border: 1px solid var(--border); border-radius: 10px; padding: 10px; max-height: 220px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: #cfe1ff; white-space: pre-wrap; }

@@ -123,7 +123,7 @@ function applyAdditionalToolsVisibility() {
 	try {
 		const chk = document.getElementById('additionalTools') as HTMLInputElement | null;
 		const show = !chk || chk.checked;
-		const ids = ['tool-wifi','tool-mdns','tool-pwm'];
+		const ids = ['tool-mode','tool-wifi','tool-mdns','tool-pwm'];
 		ids.forEach(id => {
 			const li = document.querySelector(`#toolTabs .subtab[data-target="${id}"]`) as HTMLElement | null;
 			if (li) li.style.display = show ? '' : 'none';
