@@ -114,7 +114,7 @@ function ensureVisibleToolSubtabActive() {
 		const vis = (el: HTMLElement) => el.style.display !== 'none';
 		let active = subtabs.find(t => t.classList.contains('active'));
 		if (!active || !vis(active)) {
-			const pref = ['tool-mode','tool-summary'];
+			const pref = ['tool-summary','tool-mode'];
 			let target: HTMLElement | null = null;
 			for (const id of pref) {
 				const t = document.querySelector(`#toolTabs .subtab[data-target="${id}"]`) as HTMLElement | null;
@@ -287,13 +287,7 @@ function initDeviceModePanel() {
 	const applyBtn = document.getElementById('devModeApplyBtn') as HTMLButtonElement | null;
 	const msg = document.getElementById('devModeMsg');
 	async function refresh() {
-		if (!(window as any).isConnected) return;
-		// Prevent querying device mode while in boot mode (breaks flashing)
-		if ((state as any).connectionMode !== 'runtime') {
-			try { currentEl && (currentEl.textContent = '—'); } catch {}
-			return;
-		}
-		try { currentEl && (currentEl.textContent = '…'); } catch {}
+		if (!(window as any).isConnected) return; try { currentEl && (currentEl.textContent = '…'); } catch {}
 		await ensureTransportConnected(); const mode = await sendAndExtract(state.transport!, 'get_device_mode');
 		currentEl && (currentEl.textContent = String(mode));
 		updateModeSegVisibility();
@@ -345,13 +339,7 @@ function initDeviceModePanel() {
 	};
 	refresh();
 	const devTab = document.querySelector('#toolTabs .subtab[data-target="tool-mode"]');
-	devTab?.addEventListener('click', () => { if ((state as any).connectionMode === 'runtime') refresh(); });
-	// Auto refresh only in runtime mode
-	document.addEventListener('ffvr-connected', () => { if ((state as any).connectionMode === 'runtime') refresh(); });
-	try {
-		const toolsMainTab = document.querySelector('#tabs .tab[data-target="tools"]');
-		toolsMainTab?.addEventListener('click', () => { if ((state as any).connectionMode === 'runtime') setTimeout(() => { refresh(); }, 60); });
-	} catch {}
+	devTab?.addEventListener('click', () => { refresh(); });
 }
 
 function initLedPanel() {
