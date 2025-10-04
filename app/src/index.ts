@@ -500,6 +500,7 @@ function initUpdatePanel() {
 				<div id="upgradeStatus" class="small" style="opacity:.85;">—</div>
 			</div>
 			<input class="btn btn-switch-boot" type="button" id="btnDoUpgrade" value="Upgrade" />
+			<input class="btn btn-switch-boot" type="button" id="btnReturnStream" value="Return to stream mode" style="display:none;" title="Switch device back to UVC (runtime)" />
 			<!-- Advanced flashing removed per request -->
 		</div>
 	`;
@@ -508,6 +509,7 @@ function initUpdatePanel() {
 	const actBoot = document.getElementById('updateActionsBoot');
 	const btnSwitch = document.getElementById('btnSwitchToBoot') as HTMLInputElement | null;
 	const btnUpgrade = document.getElementById('btnDoUpgrade') as HTMLInputElement | null;
+	const btnReturnStream = document.getElementById('btnReturnStream') as HTMLInputElement | null;
 	const upBoard = document.getElementById('upgradeBoard') as HTMLElement | null;
 	const upCurrent = document.getElementById('upgradeCurrent') as HTMLElement | null;
 	const upLatest = document.getElementById('upgradeLatest') as HTMLElement | null;
@@ -636,20 +638,24 @@ function initUpdatePanel() {
 								if (cmp > 0) {
 									upStatus.textContent = `Upgrade available (${currentVer} → ${latest.version})`;
 									upStatus.className = 'upgrade-flag flag-upgrade';
-									if (btnUpgrade) { btnUpgrade.disabled = false; btnUpgrade.title = 'Flash latest firmware'; btnUpgrade.classList.add('upgrade-ready'); }
+									if (btnUpgrade) { btnUpgrade.disabled = false; btnUpgrade.title = 'Flash latest firmware'; btnUpgrade.classList.add('upgrade-ready'); btnUpgrade.style.display = 'inline-flex'; }
+									if (btnReturnStream) btnReturnStream.style.display = 'none';
 								} else if (cmp === 0) {
 									upStatus.textContent = 'Up to date';
 									upStatus.className = 'upgrade-flag flag-ok';
-									if (btnUpgrade) { btnUpgrade.disabled = true; btnUpgrade.title = 'Already latest version'; btnUpgrade.classList.remove('upgrade-ready'); }
+									if (btnUpgrade) { btnUpgrade.disabled = true; btnUpgrade.title = 'Already latest version'; btnUpgrade.classList.remove('upgrade-ready'); btnUpgrade.style.display = 'none'; }
+									if (btnReturnStream) { btnReturnStream.style.display = 'inline-flex'; }
 								} else {
 									upStatus.textContent = 'Development build';
 									upStatus.className = 'upgrade-flag flag-dev';
-									if (btnUpgrade) { btnUpgrade.disabled = false; btnUpgrade.title = 'Flash anyway'; btnUpgrade.classList.remove('upgrade-ready'); }
+									if (btnUpgrade) { btnUpgrade.disabled = false; btnUpgrade.title = 'Flash anyway'; btnUpgrade.classList.remove('upgrade-ready'); btnUpgrade.style.display = 'inline-flex'; }
+									if (btnReturnStream) btnReturnStream.style.display = 'none';
 								}
 							} else {
 								upStatus.textContent = '—';
 								upStatus.className = 'upgrade-flag flag-pending';
-								if (btnUpgrade) { btnUpgrade.disabled = !latest.optionValue; btnUpgrade.classList.remove('upgrade-ready'); }
+								if (btnUpgrade) { btnUpgrade.disabled = !latest.optionValue; btnUpgrade.classList.remove('upgrade-ready'); btnUpgrade.style.display = latest.optionValue ? 'inline-flex' : 'none'; }
+								if (btnReturnStream) btnReturnStream.style.display = 'none';
 							}
 						}
 				} catch {}
@@ -813,6 +819,33 @@ function initUpdatePanel() {
 		} catch {}
 	});
 
+	btnReturnStream && (btnReturnStream.onclick = async () => {
+		try {
+			if ((state as any).connectionMode !== 'boot') return;
+			await ensureTransportConnected();
+			// Switch to UVC runtime mode
+			const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: 'uvc' });
+			if (ok) {
+				// Show power cycle overlay (reuse existing) then attempt reconnect in runtime
+				const ov = document.getElementById('powerCycleOverlay') as HTMLElement | null;
+				const btn = document.getElementById('powerCycleConfirm') as HTMLButtonElement | null;
+				if (ov && btn) {
+					ov.style.display = 'flex';
+					btn.addEventListener('click', async () => {
+						btn.disabled = true;
+						try {
+							const { handlePortDisconnected } = await import('./core/serial');
+							await handlePortDisconnected('Restart to runtime mode');
+							ov.style.display = 'none';
+							await autoReconnectRuntime();
+						} catch {}
+						finally { btn.disabled = false; }
+					}, { once: true });
+				}
+			}
+		} catch {}
+	});
+
 	document.addEventListener('ffvr-connected', () => { refresh(); });
 	// Fix: stale upgrade status when switching between different devices within one session.
 	// When a new runtime connection is established, previously cached board/version info from another device
@@ -835,6 +868,56 @@ function initUpdatePanel() {
 initUpdatePanel();
 
 // Automatically attempt to reconnect in boot mode after user power-cycled when switching from runtime.
+async function autoReconnectRuntime() {
+	try {
+		const connectBtn = document.getElementById('connectButton') as HTMLButtonElement | null;
+		if (!connectBtn) return;
+		let indicator = document.getElementById('autoReconnectIndicatorRuntime') as HTMLElement | null;
+		if (!indicator) {
+			indicator = document.createElement('div');
+			indicator.id = 'autoReconnectIndicatorRuntime';
+			indicator.style.display = 'flex';
+			indicator.style.alignItems = 'center';
+			indicator.style.gap = '6px';
+			indicator.style.fontSize = '12px';
+			indicator.style.color = 'var(--muted)';
+			indicator.style.marginTop = '6px';
+			indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="animation: spin 1s linear infinite;"><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.15)" stroke-width="3"/><path d="M22 12a10 10 0 0 0-10-10" stroke="var(--accent)" stroke-width="3"/></svg><span>Reconnecting (runtime)…</span>`;
+			const parentSection = document.getElementById('connect');
+			const adv = parentSection?.querySelector('details.advanced');
+			if (adv && adv.parentElement) adv.parentElement.insertBefore(indicator, document.getElementById('connectAlert'));
+		}
+		indicator.style.display = 'flex';
+		connectBtn.disabled = true;
+		let cleaned = false;
+		const cleanup = () => { if (cleaned) return; cleaned = true; try { connectBtn.disabled = false; } catch {}; try { indicator!.style.display = 'none'; } catch {}; };
+		const serAny: any = (navigator as any).serial;
+		let picked: any = null;
+		for (let attempt = 0; attempt < 6 && !picked; attempt++) {
+			await new Promise(r => setTimeout(r, 350 + attempt * 170));
+			try {
+				const ports = await serAny?.getPorts?.();
+				if (Array.isArray(ports) && ports.length) {
+					picked = ports.find((p: any) => /esp|usb/i.test(String(p?.device?.productName || ''))) || ports[0];
+				}
+			} catch {}
+		}
+		if (!picked) { try { const { showConnectAlert } = await import('./ui/alerts'); showConnectAlert('Reconnect (runtime) failed. Please press Connect.','error'); } catch {}; cleanup(); return; }
+		try { const { state } = await import('./core/state'); state.device = picked; (window as any)._ffvr_autoReconnectRuntimePending = true; } catch {}
+		const onAutoConnected = async () => {
+			try {
+				if (!(window as any)._ffvr_autoReconnectRuntimePending) return;
+				(window as any)._ffvr_autoReconnectRuntimePending = false;
+				// Open Tools tab (UVC / summary) after runtime reconnect
+				const toolsTab = document.querySelector('#tabs .tab[data-target="tools"]') as HTMLElement | null; toolsTab?.click();
+				try { const { showConnectAlert } = await import('./ui/alerts'); showConnectAlert('Reconnected (runtime mode).','success'); } catch {}
+			} finally { cleanup(); }
+		};
+		document.addEventListener('ffvr-connected', onAutoConnected, { once: true });
+		connectBtn.disabled = false;
+		connectBtn.click();
+	} catch {}
+}
 async function autoReconnectBoot() {
 	try {
 		const connectBtn = document.getElementById('connectButton') as HTMLButtonElement | null;

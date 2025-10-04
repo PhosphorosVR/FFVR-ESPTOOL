@@ -165,7 +165,7 @@ export function wireConnection(term: any) {
               (async () => {
                 try {
                   const { showConnectAlert } = await import('../ui/alerts');
-                  if (applied) showConnectAlert(`Detected board ${saved}. Upgrade available.`, 'success');
+                  if (applied) showConnectAlert(`Detected board ${saved}.`, 'success');
                   else showConnectAlert(`Detected board ${saved} – no matching firmware found in FFVR list.`, 'error');
                 } catch {}
               })();
