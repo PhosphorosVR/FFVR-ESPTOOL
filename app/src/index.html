@@ -24,10 +24,6 @@
             </div>
           </div>
           <div class="card-body">
-            <div class="alert mt-12" id="connectAlert" style="display:none;">
-              <span class="close" onclick="this.parentElement.style.display='none'">&times;</span>
-              <span id="connectAlertMsg"></span>
-            </div>
             <div class="row connect-actions" style="margin-bottom: 8px;">
               <input class="btn btn-primary" type="button" id="connectButton" value="Connect" />
               <input class="btn btn-warning" type="button" id="disconnectButton" value="Disconnect" />
@@ -78,6 +74,9 @@
                 </div>
               </div>
             </details>
+            <div class="alert mt-12" id="connectAlert" style="display:none; margin-top:14px;">
+              <span id="connectAlertMsg"></span>
+            </div>
           </div>
         </section>
         <ul class="tabs mt-32" id="tabs">

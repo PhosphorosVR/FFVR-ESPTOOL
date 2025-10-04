@@ -169,7 +169,7 @@ export async function performFlash(table: HTMLTableElement, prebuiltSelect: HTML
           try {
             // After user confirms they've power cycled, trigger disconnect handling so UI resets
             const { handlePortDisconnected } = await import('../core/serial');
-            await handlePortDisconnected('Flashing complete, user power-cycled');
+            await handlePortDisconnected('Flashing successful (user power-cycled)');
           } catch {}
           finally {
             ov.style.display = 'none';

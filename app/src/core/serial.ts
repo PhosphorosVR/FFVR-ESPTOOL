@@ -89,7 +89,14 @@ export async function handlePortDisconnected(reason: string = 'Device disconnect
         if (section) (section as HTMLElement).style.display = 'none';
       });
     } catch {}
-    showConnectAlert(reason);
+    // Special case: if flashing completed successfully we want a green success style message
+    try {
+      if (/Flashing successful/i.test(reason)) {
+        showConnectAlert('Flashing successful','success');
+      } else {
+        showConnectAlert(reason,'error');
+      }
+    } catch { showConnectAlert(reason,'error'); }
   } catch {}
 }
 

@@ -535,8 +535,14 @@ function initUpdatePanel() {
 					ov.style.display = 'flex';
 					btn.addEventListener('click', async () => {
 						btn.disabled = true;
-						try { const { handlePortDisconnected } = await import('./core/serial'); await handlePortDisconnected('Restart to boot mode'); } catch {}
-						finally { ov.style.display = 'none'; btn.disabled = false; }
+						try {
+							const { handlePortDisconnected } = await import('./core/serial');
+							await handlePortDisconnected('Restart to boot mode');
+							ov.style.display = 'none';
+							// Begin auto-reconnect sequence (no user re-click required)
+							await autoReconnectBoot();
+						} catch {}
+						finally { btn.disabled = false; }
 					}, { once: true });
 				}
 			}
@@ -554,6 +560,60 @@ function initUpdatePanel() {
 }
 
 initUpdatePanel();
+
+// Automatically attempt to reconnect in boot mode after user power-cycled when switching from runtime.
+async function autoReconnectBoot() {
+	try {
+		const connectBtn = document.getElementById('connectButton') as HTMLButtonElement | null;
+		if (!connectBtn) return;
+		// Show inline spinner + text (non-blocking layout under buttons row)
+		let indicator = document.getElementById('autoReconnectIndicator') as HTMLElement | null;
+		if (!indicator) {
+			indicator = document.createElement('div');
+			indicator.id = 'autoReconnectIndicator';
+			indicator.style.display = 'flex';
+			indicator.style.alignItems = 'center';
+			indicator.style.gap = '6px';
+			indicator.style.fontSize = '12px';
+			indicator.style.color = 'var(--muted)';
+			indicator.style.marginTop = '6px';
+			indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="animation: spin 1s linear infinite;"><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.15)" stroke-width="3"/><path d="M22 12a10 10 0 0 0-10-10" stroke="var(--accent)" stroke-width="3"/></svg><span>Auto‑reconnecting…</span>`;
+			const parentSection = document.getElementById('connect');
+			const adv = parentSection?.querySelector('details.advanced');
+			if (adv && adv.parentElement) adv.parentElement.insertBefore(indicator, document.getElementById('connectAlert'));
+		}
+		indicator.style.display = 'flex';
+		connectBtn.disabled = true;
+		let cleaned = false;
+		const cleanup = () => { if (cleaned) return; cleaned = true; try { connectBtn.disabled = false; } catch {}; try { indicator!.style.display = 'none'; } catch {}; };
+		// Probe for new port
+		const serAny: any = (navigator as any).serial;
+		let picked: any = null;
+		for (let attempt = 0; attempt < 6 && !picked; attempt++) {
+			await new Promise(r => setTimeout(r, 350 + attempt * 170));
+			try {
+				const ports = await serAny?.getPorts?.();
+				if (Array.isArray(ports) && ports.length) {
+					picked = ports.find((p: any) => /esp|boot|jtag|usb/i.test(String(p?.device?.productName || ''))) || ports[0];
+				}
+			} catch {}
+		}
+		if (!picked) { try { const { showConnectAlert } = await import('./ui/alerts'); showConnectAlert('Auto-reconnect failed. Please press Connect.','error'); } catch {}; cleanup(); return; }
+		try { const { state } = await import('./core/state'); state.device = picked; (window as any)._ffvr_autoReconnectPending = true; } catch {}
+		const onAutoConnected = async () => {
+			try {
+				if (!(window as any)._ffvr_autoReconnectPending) return;
+				(window as any)._ffvr_autoReconnectPending = false;
+				const programTab = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null; programTab?.click();
+				try { const { showConnectAlert } = await import('./ui/alerts'); showConnectAlert('Auto-reconnected (boot mode). Ready to flash.','success'); } catch {}
+			} finally { cleanup(); }
+		};
+		document.addEventListener('ffvr-connected', onAutoConnected, { once: true });
+		// Must re-enable for click handler
+		connectBtn.disabled = false;
+		connectBtn.click();
+	} catch {}
+}
 
 // Start/stop UVC preview in the main connect block when connection state changes
 document.addEventListener('DOMContentLoaded', () => {

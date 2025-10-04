@@ -62,6 +62,7 @@ select, input[type="text"], input[type="number"], input[type="password"] { backg
 .alert { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); border-left: 3px solid rgba(255, 107, 107, 0.6); color: var(--muted); padding: 8px 10px; border-radius: 8px; font-size: 13px; }
 .alert.success { border-left-color: rgba(47, 209, 128, 0.7); color: #cfeedd; }
 .alert .close { float: right; cursor: pointer; opacity: .7; font-size: 14px; line-height: 1; margin-left: 8px; }
+/* Consistent alert spacing near connect buttons */
 
 /* Advanced (details): modern, clean look (no box); comfortable spacing */
 details.advanced > summary { font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }

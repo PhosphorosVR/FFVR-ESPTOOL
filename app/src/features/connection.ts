@@ -36,8 +36,10 @@ export function wireConnection(term: any) {
       updateConnStatusDot(false);
       state.isConsoleClosed = true;
   // Always prompt for a port on connect to allow choosing a different COM after disconnect
-  state.device = null;
-  state.device = await serialLib.requestPort({});
+  // If auto-reconnect preselected a device reuse it, else prompt.
+  if (!state.device) {
+    state.device = await serialLib.requestPort({});
+  }
       state.lastBaud = parseInt((baudSel as any).value) || 115200;
       // Always create a fresh transport (raw). Boot attempt will use it.
       state.transport = new Transport(state.device, true);
@@ -124,7 +126,7 @@ export function wireConnection(term: any) {
       state.isConnected = false;
       (window as any).isConnected = false;
       updateConnStatusDot(false);
-      showConnectAlert(`Connection failed: ${e?.message || e}`);
+  showConnectAlert(`Connection failed: ${e?.message || e}`,'error');
       dbg(`Connect error ${e?.message || e}`, 'info');
     }
   };
