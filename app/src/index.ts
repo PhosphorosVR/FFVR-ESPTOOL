@@ -505,6 +505,35 @@ function initUpdatePanel() {
 	const actBoot = document.getElementById('updateActionsBoot');
 	const btnSwitch = document.getElementById('btnSwitchToBoot') as HTMLInputElement | null;
 	const btnFlash = document.getElementById('btnGoToFlash') as HTMLInputElement | null;
+	// Automatic discovery now integrated into switch-to-boot; button removed.
+
+	async function autoDiscoverBoard(): Promise<string | null> {
+		try {
+			if (!(window as any).isConnected) return null;
+			if ((state as any).connectionMode !== 'runtime') return sessionStorage.getItem('ffvr_detected_board');
+			// Skip if already detected in this session
+			const existing = sessionStorage.getItem('ffvr_detected_board');
+			if (existing) return existing;
+			await ensureTransportConnected();
+			let board: string | null = null;
+			try { const who = await sendAndExtract(state.transport!, 'get_who_am_i'); if (who?.who_am_i) board = String(who.who_am_i).toLowerCase(); } catch {}
+			if (!board) { try { const name = await sendAndExtract(state.transport!, 'get_mdns_name'); if (name) board = String(name).toLowerCase(); } catch {} }
+			if (board) {
+				if (/eye[_-]?l/.test(board)) board = 'facefocusvr_eye_l';
+				else if (/eye[_-]?r/.test(board)) board = 'facefocusvr_eye_r';
+				else if (/face/.test(board)) board = 'facefocusvr_face';
+			}
+			if (!board) {
+				try { const { showConnectAlert } = await import('./ui/alerts'); showConnectAlert('Could not auto-detect device type. You can still flash manually.','error'); } catch {}
+				return null;
+			}
+			try { sessionStorage.setItem('ffvr_detected_board', board); } catch {}
+			try { const { dbg } = await import('./ui/debug'); dbg(`Auto-discovered board: ${board}`,'info'); } catch {}
+			// Preload manifest & attempt early selection (runtime view not critical but sets state)
+			try { const { loadPrebuiltManifest } = await import('./features/firmwareManifest'); await loadPrebuiltManifest(); } catch {}
+			return board;
+		} catch { return null; }
+	}
 
 	async function refresh() {
 		try {
@@ -526,6 +555,11 @@ function initUpdatePanel() {
 		try {
 			if (!(window as any).isConnected) return;
 			await ensureTransportConnected();
+			// Perform automatic board discovery before requesting boot mode
+			const discovered = await autoDiscoverBoard();
+			if (discovered) {
+				try { const { showConnectAlert } = await import('./ui/alerts'); showConnectAlert(`Detected board: ${discovered}. Switching to boot…`,'success'); } catch {}
+			}
 			const ok = await sendAndExtract(state.transport!, 'switch_mode', { mode: 'setup' });
 			if (ok) {
 				// Show same overlay as device mode panel

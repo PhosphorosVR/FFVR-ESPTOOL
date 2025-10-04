@@ -1,24 +1,26 @@
 {
   "groups": [
     {
-      "name": "FFVR",
-      "items": [
-        { "file": "FFVR Eye L [0.1.0].bin", "address": "0x0" },
-        { "file": "FFVR Face [0.1.0].bin", "address": "0x0" },
-        { "file": "FFVR Eye R [0.1.0].bin", "address": "0x0" }
-        
-      ]
+      "name": "facefocusvr_face",
+      "items": [ { "file": "FFVR Face [0.1.0].bin", "address": "0x0" } ]
+    },
+    {
+      "name": "facefocusvr_eye_l",
+      "items": [ { "file": "FFVR Eye L [0.1.0].bin", "address": "0x0" } ]
+    },
+    {
+      "name": "facefocusvr_eye_r",
+      "items": [ { "file": "FFVR Eye R [0.1.0].bin", "address": "0x0" } ]
     },
     {
       "name": "XIAO / Seeed",
-      "items": [
-        { "file": "Platzhalter.bin", "address": "0x0" }
-      ]
+      "items": [ { "file": "Platzhalter.bin", "address": "0x0" } ]
     },
     {
       "name": "Legacy",
       "items": [
-        { "file": "legacy/Test.bin", "address": "0x0" }
+        { "file": "legacy/Test.bin", "address": "0x0" },
+        { "file": "legacy/Test copy.bin", "address": "0x0" }
       ]
     }
   ]

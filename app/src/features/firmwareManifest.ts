@@ -38,22 +38,62 @@ export function renderPrebuiltSelect() {
   }
   if (prebuiltGroups && prebuiltGroups.length) {
     prebuiltGroups = prebuiltGroups.filter((v, i, a) => a.indexOf(v) === i);
+    // Board-specific groups to hide in UI, but still usable internally for auto-detect
+    const hiddenBoardGroups = new Set(['facefocusvr_face','facefocusvr_eye_l','facefocusvr_eye_r','FFVR (all)']);
+    const aggregatedFfvr: number[] = [];
     for (const cat of prebuiltGroups) {
+      const indices = groupIndexMap.get(cat) || [];
+      if (!indices.length) continue;
+      if (hiddenBoardGroups.has(cat)) {
+        aggregatedFfvr.push(...indices);
+      }
+    }
+    // Insert aggregated FFVR group first (if any)
+    if (aggregatedFfvr.length) {
+      const unique = Array.from(new Set(aggregatedFfvr));
+      unique.sort((a,b) => String(prebuiltItems[a].file).localeCompare(String(prebuiltItems[b].file)));
+      const ogFFVR = document.createElement('optgroup');
+      ogFFVR.label = 'FFVR';
+      const seenFiles = new Set<string>();
+      unique.forEach(idx => {
+        const it = prebuiltItems[idx]; if (!it) return;
+        const label = (it.file || it.name || `item ${idx}`) as string;
+        if (seenFiles.has(label)) return; // avoid duplicates
+        seenFiles.add(label);
+        const opt = document.createElement('option');
+        opt.value = String(idx);
+        opt.textContent = label;
+        opt.title = it.source === 'legacy' ? `${label} (legacy)` : label;
+        if (/face/i.test(label)) opt.dataset.board = 'facefocusvr_face';
+        else if (/eye\s*L/i.test(label)) opt.dataset.board = 'facefocusvr_eye_l';
+        else if (/eye\s*R/i.test(label)) opt.dataset.board = 'facefocusvr_eye_r';
+        ogFFVR.appendChild(opt);
+      });
+      prebuiltSelect.appendChild(ogFFVR);
+    }
+    // Render remaining (non-hidden) groups after FFVR
+    for (const cat of prebuiltGroups) {
+      if (hiddenBoardGroups.has(cat)) continue;
       const indices = groupIndexMap.get(cat) || [];
       if (!indices.length) continue;
       const og = document.createElement('optgroup');
       og.label = cat;
-      indices.forEach((idx) => {
-        const it = prebuiltItems[idx];
-        if (!it) return;
+      const seen = new Set<string>();
+      indices.forEach(idx => {
+        const it = prebuiltItems[idx]; if (!it) return;
+        const label = (it.file || it.name || `item ${idx}`) as string;
+        // Only dedupe non-Legacy groups; in Legacy we want to show every entry explicitly
+        if (og.label !== 'Legacy') {
+          if (seen.has(label)) return;
+          seen.add(label);
+        }
         const opt = document.createElement('option');
         opt.value = String(idx);
-        const label = it.file || it.name || `item ${idx}`;
         opt.textContent = label;
         opt.title = it.source === 'legacy' ? `${label} (legacy)` : label;
         og.appendChild(opt);
       });
-      prebuiltSelect.appendChild(og);
+      if (og.children.length) prebuiltSelect.appendChild(og);
     }
     const assigned = new Set<number>();
     for (const idxs of groupIndexMap.values()) idxs.forEach(i => assigned.add(i));
@@ -203,6 +243,24 @@ export async function loadPrebuiltManifest() {
       }
     } catch {}
     renderPrebuiltSelect();
+    // After render, if a detected board is stored, try immediate selection (smoother than later timeout)
+    try {
+      const detected = sessionStorage.getItem('ffvr_detected_board');
+      if (detected) {
+        const sel = document.getElementById('prebuiltSelect') as HTMLSelectElement | null;
+        if (sel) {
+          const ogs = Array.from(sel.querySelectorAll('optgroup')) as HTMLOptGroupElement[];
+            for (const og of ogs) {
+              if (og.label === detected && og.children.length) {
+                const first = og.children[0] as HTMLOptionElement;
+                sel.value = first.value;
+                sel.dispatchEvent(new Event('change'));
+                break;
+              }
+            }
+        }
+      }
+    } catch {}
   } catch (e) {
   dbg(`No prebuilt list or failed to load. ${((e as any)?.message ?? e)}`, 'info');
   }

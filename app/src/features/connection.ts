@@ -116,9 +116,65 @@ export function wireConnection(term: any) {
       applyTabMode(state.connectionMode);
   // Notify UI of connection for UVC preview, etc.
   try { document.dispatchEvent(new CustomEvent('ffvr-connected')); } catch {}
-  // Always select Update tab initially (new UX)
-  const tabUpdate = document.querySelector('#tabs .tab[data-target="update"]') as HTMLElement | null;
-  tabUpdate?.click();
+  // Open flashing tab automatically in boot mode; otherwise go to Update tab
+  try {
+    const tabProgram = document.querySelector('#tabs .tab[data-target="program"]') as HTMLElement | null;
+    const tabUpdate = document.querySelector('#tabs .tab[data-target="update"]') as HTMLElement | null;
+    if (state.connectionMode === 'boot') {
+      tabProgram?.click();
+      // Apply previously detected board firmware selection if stored
+      try {
+        const saved = sessionStorage.getItem('ffvr_detected_board');
+        if (saved) {
+          // Debug log about previously detected board
+          try { const { dbg } = await import('../ui/debug'); dbg(`Previously detected board: ${saved} (attempting auto firmware select)`, 'info'); } catch {}
+          // Ensure manifest loaded (idempotent) then select
+          try {
+            const { loadPrebuiltManifest } = await import('../features/firmwareManifest');
+            await loadPrebuiltManifest();
+          } catch {}
+          // Delay a tick to allow select rendering
+          const attemptSelect = (tries: number): void => {
+            try {
+              const sel = document.getElementById('prebuiltSelect') as HTMLSelectElement | null;
+              if (!sel) { if (tries > 0) return void setTimeout(() => attemptSelect(tries-1), 120); return; }
+              // Aggregated visible group is 'FFVR'; hidden board groups were merged. We map via option[data-board]
+              const ffvrGroup = sel.querySelector('optgroup[label="FFVR"]') as HTMLOptGroupElement | null;
+              if (!ffvrGroup) { if (tries > 0) return void setTimeout(() => attemptSelect(tries-1), 120); return; }
+              let targetOpt: HTMLOptionElement | null = ffvrGroup.querySelector(`option[data-board="${saved}"]`);
+              if (!targetOpt) {
+                // Fallback heuristic by label patterns
+                const opts = Array.from(ffvrGroup.querySelectorAll('option')) as HTMLOptionElement[];
+                const lc = saved.toLowerCase();
+                if (/face/.test(lc)) targetOpt = opts.find(o => /face/i.test(o.textContent || '')) || null;
+                else if (/eye.*l/.test(lc)) targetOpt = opts.find(o => /eye\s*L/i.test(o.textContent || '')) || null;
+                else if (/eye.*r/.test(lc)) targetOpt = opts.find(o => /eye\s*R/i.test(o.textContent || '')) || null;
+              }
+              let applied = false;
+              if (targetOpt) {
+                sel.value = targetOpt.value;
+                sel.dispatchEvent(new Event('change'));
+                applied = true;
+              }
+              (async () => {
+                try {
+                  const { showConnectAlert } = await import('../ui/alerts');
+                  if (applied) showConnectAlert(`Auto-selected firmware for ${saved}. Ready to flash.`, 'success');
+                  else showConnectAlert(`Detected board ${saved} – no matching firmware found in FFVR list.`, 'error');
+                } catch {}
+              })();
+              if (!applied && tries > 0) setTimeout(() => attemptSelect(tries-1), 160);
+            } catch { if (tries > 0) { setTimeout(() => attemptSelect(tries-1), 160); } }
+          };
+          setTimeout(() => attemptSelect(5), 150);
+        } else {
+          try { const { dbg } = await import('../ui/debug'); dbg('No previously detected board in sessionStorage.', 'info'); } catch {}
+        }
+      } catch {}
+    } else {
+      tabUpdate?.click();
+    }
+  } catch {}
       startPortPresenceMonitor();
     } catch (e: any) {
   // Logged to UI debug panel and terminal already
