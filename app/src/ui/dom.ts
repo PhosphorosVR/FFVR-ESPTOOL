@@ -36,7 +36,8 @@ export function setTabsEnabled(enabled: boolean) {
     const tabConsole = document.querySelector('#tabs .tab[data-target="console"]') as HTMLElement | null;
     const tabTools = document.querySelector('#tabs .tab[data-target="tools"]') as HTMLElement | null;
     const tabUpdate = document.querySelector('#tabs .tab[data-target="update"]') as HTMLElement | null;
-    [tabProgram, tabConsole, tabTools, tabUpdate].forEach(t => t && t.classList.toggle('disabled', !enabled));
+    [tabProgram, tabConsole, tabTools].forEach(t => t && t.classList.toggle('disabled', !enabled));
+    if (tabUpdate) tabUpdate.classList.add('disabled');
   } catch {}
 }
 
@@ -50,15 +51,33 @@ export function applyTabMode(mode: 'boot' | 'runtime' | null) {
     if (!mode) return;
     let enableTargets: string[] = [];
     if (mode === 'boot') {
-      // Bootloader: Upgrade (update) + Flashing (program) + Console
-      enableTargets = ['update','program','console'];
+      // Bootloader: Flashing (program) + Console
+      enableTargets = ['program','console'];
     } else {
-      // Runtime: Tools + Update
-      enableTargets = ['tools','update'];
+      // Runtime: Tools
+      enableTargets = ['tools'];
     }
+    const locked = ['update'];
     enableTargets.forEach(id => {
       const tab = document.querySelector(`#tabs .tab[data-target="${id}"]`) as HTMLElement | null;
       if (tab) tab.classList.remove('disabled');
+    });
+    // In runtime, auto-open the Tools tab so the Mode subtab is visible immediately
+    if (mode === 'runtime') {
+      const toolsTab = document.querySelector('#tabs .tab[data-target="tools"]') as HTMLElement | null;
+      if (toolsTab && !toolsTab.classList.contains('disabled')) toolsTab.click();
+      // Also fire Mode subtab once to load current mode data
+      const modeSubtab = document.querySelector('#toolTabs .subtab[data-target="tool-mode"]') as HTMLElement | null;
+      if (modeSubtab && !modeSubtab.classList.contains('disabled')) {
+        // Ensure it is marked active before the click handler runs
+        modeSubtab.classList.add('active');
+        modeSubtab.setAttribute('aria-selected','true');
+        modeSubtab.click();
+      }
+    }
+    locked.forEach(id => {
+      const tab = document.querySelector(`#tabs .tab[data-target="${id}"]`) as HTMLElement | null;
+      if (tab) tab.classList.add('disabled');
     });
   } catch {}
 }

@@ -28,7 +28,7 @@
               <input class="btn btn-primary" type="button" id="connectButton" value="Connect" />
               <input class="btn btn-warning" type="button" id="disconnectButton" value="Disconnect" />
             </div>
-            <details class="advanced mt-8">
+            <details class="advanced mt-8" style="display:none;">
               <summary>Advanced</summary>
               <div class="advanced-body">
                 <div class="row">
@@ -55,7 +55,7 @@
                 </div>
                 <div class="row mt-8">
                   <label class="toggle" for="additionalTools">
-                    <input type="checkbox" id="additionalTools" />
+                    <input type="checkbox" id="additionalTools" checked />
                     Show additional tools (WiFi, Name, LED, Mode)
                   </label>
                 </div>
@@ -80,7 +80,7 @@
           </div>
         </section>
         <ul class="tabs mt-32" id="tabs">
-          <li class="tab disabled" data-target="update">Update</li>
+          <li class="tab disabled" data-target="update" aria-disabled="true">Update</li>
           <li class="tab disabled" data-target="tools">Tools</li>
           <li class="tab disabled" data-target="console">Console</li>
           <li class="tab disabled" data-target="program">Flashing</li>
@@ -103,44 +103,20 @@
                   </select>
                 </label>
               </div>
-              <details class="advanced mt-12 flash-adv">
-                <summary>Advanced</summary>
-                <div class="advanced-body">
-                  <div class="adv-group">
-                    <div class="row legacy-row mt-8">
-                      <label class="toggle" for="showLegacy">
-                        <input type="checkbox" id="showLegacy" />
-                        Show legacy firmware in dropdown
-                      </label>
-                    </div>
-                  </div>
-                  <div class="adv-group">
-                    <table id="fileTable" style="display:none;">
-                      <thead>
-                        <tr>
-                          <th>Flash Address</th>
-                          <th>File</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody id="tableBody"></tbody>
-                    </table>
-                    <div class="row mt-8">
-                      <input class="btn btn-secondary btn-sm" type="button" id="addFile" value="Add custom file" />
-                      <span class="muted small">Upload an additional .bin and set its flash address.</span>
-                    </div>
-                    <div id="fileEmpty" class="muted empty-hint mt-12">No custom files added. Use “Add custom file” to include an extra binary at a specific address.</div>
-                  </div>
-                  <div class="adv-group">
-                    <div class="row">
-                      <span class="muted section-caption">Maintenance</span>
-                    </div>
-                    <div class="row mt-8 flash-erase-row">
-                      <input class="btn btn-danger btn-sm" type="button" id="eraseButton" value="Erase flash" />
-                    </div>
-                  </div>
-                </div>
-              </details>
+              <!-- Advanced options removed: keep hidden container for internal logic -->
+              <div style="display:none;">
+                <table id="fileTable">
+                  <thead>
+                    <tr>
+                      <th>Flash Address</th>
+                      <th>File</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="tableBody"></tbody>
+                </table>
+                <div id="fileEmpty"></div>
+              </div>
               <div class="row mt-32 flash-primary-row">
                 <input class="btn btn-primary" type="button" id="programButton" value="Flash" />
               </div>
@@ -184,15 +160,15 @@
           </div>
           <div class="card-body">
             <ul class="subtabs" id="toolTabs" role="tablist" aria-label="Setup tools">
-              <li class="subtab" role="tab" aria-selected="false" data-target="tool-summary">🧩 Summary</li>
-              <li class="subtab" role="tab" aria-selected="false" data-target="tool-mode">🛠️ Mode</li>
-              <li class="subtab" role="tab" aria-selected="false" data-target="tool-wifi">📶 WiFi</li>
-              <li class="subtab" role="tab" aria-selected="false" data-target="tool-mdns">🏷️ Name</li>
-              <li class="subtab" role="tab" aria-selected="false" data-target="tool-pwm">💡 LED</li>
+              <li class="subtab disabled" role="tab" aria-disabled="true" aria-selected="false" data-target="tool-summary">🧩 Summary</li>
+              <li class="subtab active" role="tab" aria-selected="true" data-target="tool-mode">🛠️ Mode</li>
+              <li class="subtab disabled" role="tab" aria-disabled="true" aria-selected="false" data-target="tool-wifi">📶 WiFi</li>
+              <li class="subtab disabled" role="tab" aria-disabled="true" aria-selected="false" data-target="tool-mdns">🏷️ Name</li>
+              <li class="subtab disabled" role="tab" aria-disabled="true" aria-selected="false" data-target="tool-pwm">💡 LED</li>
             </ul>
             <div class="tool-panels">
               <div id="tool-summary" class="tool-panel" role="tabpanel" style="display:none"></div>
-              <div id="tool-mode" class="tool-panel" role="tabpanel" style="display:none;"></div>
+              <div id="tool-mode" class="tool-panel" role="tabpanel" style="display:block;"></div>
               <div id="tool-wifi" class="tool-panel" role="tabpanel" style="display:none;">
                 <div class="row">
                   <input class="btn btn-secondary" type="button" id="wifiScanButton" value="Scan networks" />
@@ -235,6 +211,17 @@
           </div>
         </section>
       </main>
+      <footer class="app-footer">
+        <span class="muted">FaceFocusVR</span>
+        <span class="dot">•</span>
+        <a href="https://shop.facefocusvr.com/policies/privacy-policy" target="_blank" rel="noreferrer">Privacy</a>
+        <span class="dot">•</span>
+        <a href="https://shop.facefocusvr.com/policies/terms-of-service" target="_blank" rel="noreferrer">Terms</a>
+        <span class="dot">•</span>
+        <a href="https://shop.facefocusvr.com/policies/legal-notice" target="_blank" rel="noreferrer">Legal Notice</a>
+        <span class="dot">•</span>
+        <a href="https://shop.facefocusvr.com/policies/contact-information" target="_blank" rel="noreferrer">Contact</a>
+      </footer>
     </div>
     <script src="index.ts" type="module"></script>
     <!-- Global busy indicator (floating) -->
@@ -261,7 +248,7 @@
       <div class="overlay-content">
         <h3>Power cycle device</h3>
   <p>Switch off or unplug the device, then reconnect it to enter boot mode. After you have done this, confirm below.</p>
-  <button id="powerCycleConfirm" class="btn btn-primary" type="button">Yes, I power‑cycled, reconnect me</button>
+  <button id="powerCycleConfirm" class="btn btn-primary" type="button">Yes, I power‑cycled</button>
       </div>
     </div>
     <!-- Flash success overlay -->
@@ -338,6 +325,7 @@
         }
         subtabs.forEach(function(tab){
           tab.addEventListener('click', function(){
+            if (tab.classList.contains('disabled')) return;
             subtabs.forEach(function(t){ t.classList.remove('active'); t.setAttribute('aria-selected','false'); });
             tab.classList.add('active');
             tab.setAttribute('aria-selected','true');

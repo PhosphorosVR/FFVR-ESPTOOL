@@ -174,6 +174,7 @@ export async function performFlash(table: HTMLTableElement, prebuiltSelect: HTML
           finally {
             ov.style.display = 'none';
             btn.disabled = false;
+            try { window.location.reload(); } catch {}
           }
         };
       } else {

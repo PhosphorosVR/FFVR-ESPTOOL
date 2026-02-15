@@ -4,6 +4,7 @@ import { serialLib, startPortPresenceMonitor, handlePortDisconnected } from "../
 import { el, applyTabMode } from "../ui/dom";
 import { updateConnStatusDot, hideConnectAlert, showConnectAlert } from "../ui/alerts";
 import { dbg } from "../ui/debug";
+import { showBusy, hideBusy } from "../ui/utils";
 
 function cleanChipName(name: string): string {
   return typeof name === "string" ? name.replace(/\s*\(.*?\)/g, "").trim() : name as any;
@@ -30,6 +31,7 @@ export function wireConnection(term: any) {
   const eraseButton = el.eraseButton();
 
   if (connectButton) connectButton.onclick = async () => {
+    showBusy('Connecting to device…');
     try {
       dbg('Connect clicked', 'info');
       hideConnectAlert();
@@ -190,6 +192,8 @@ export function wireConnection(term: any) {
       updateConnStatusDot(false);
   showConnectAlert(`Connection failed: ${e?.message || e}`,'error');
       dbg(`Connect error ${e?.message || e}`, 'info');
+    } finally {
+      hideBusy();
     }
   };
 
@@ -203,6 +207,7 @@ export function wireConnection(term: any) {
   if (eraseButton) eraseButton.onclick = async () => {
     try { dbg('Erase flash requested', 'info'); } catch {}
     (eraseButton as HTMLButtonElement).disabled = true;
+    showBusy('Erasing flash…');
     try {
       state.isConsoleClosed = true;
       try {
@@ -216,6 +221,7 @@ export function wireConnection(term: any) {
   dbg(`Erase error ${e?.message || e}`, 'info');
       term?.writeln?.(`Error: ${e.message}`);
     } finally {
+      hideBusy();
       (eraseButton as HTMLButtonElement).disabled = false;
     }
   };

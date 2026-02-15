@@ -70,10 +70,13 @@ export function renderPrebuiltSelect() {
         ogFFVR.appendChild(opt);
       });
       prebuiltSelect.appendChild(ogFFVR);
+      // Only show FFVR firmware in the dropdown; skip all other groups
+      return;
     }
-    // Render remaining (non-hidden) groups after FFVR
+    // Render remaining (non-hidden) groups after FFVR (restricted to FFVR only)
     for (const cat of prebuiltGroups) {
       if (hiddenBoardGroups.has(cat)) continue;
+      if (cat !== 'FFVR') continue;
       const indices = groupIndexMap.get(cat) || [];
       if (!indices.length) continue;
       const og = document.createElement('optgroup');
@@ -122,7 +125,7 @@ export function renderPrebuiltSelect() {
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat)!.push({ idx, it });
   });
-  const preferred = ['ESP32 family', 'ESP8266', 'XIAO / Seeed', 'FFVR', 'Other', 'Legacy'];
+    const preferred = ['FFVR'];
   const remaining = Array.from(groups.keys()).filter(k => preferred.indexOf(k) === -1).sort();
   const finalOrder: string[] = [];
   for (const p of preferred) if (groups.has(p)) finalOrder.push(p);

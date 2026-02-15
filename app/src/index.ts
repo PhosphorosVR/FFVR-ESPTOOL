@@ -5,6 +5,7 @@ import { initDebugPanel, dbg } from "./ui/debug";
 import { updateConnStatusDot, showConnectAlert } from "./ui/alerts";
 import { el, setTabsEnabled } from "./ui/dom";
 import { initTerminal, getTerminal, startConsole, stopConsole } from "./ui/terminal";
+import { showBusy, hideBusy } from "./ui/utils";
 import { loadPrebuiltManifest, wireLegacyToggle } from "./features/firmwareManifest";
 import { wireConnection } from "./features/connection";
 import { wireWifiButtons } from "./features/wifi";
@@ -112,10 +113,11 @@ function ensureVisibleToolSubtabActive() {
 	try {
 		const subtabs = Array.from(document.querySelectorAll('#toolTabs .subtab')) as HTMLElement[];
 		const vis = (el: HTMLElement) => el.style.display !== 'none';
+		const enabled = (el: HTMLElement) => !el.classList.contains('disabled');
 		// Modified: do not auto-activate any subtab; wait for user interaction.
-		// If an active tab exists but became hidden, just remove its active state.
+		// If an active tab exists but became hidden or disabled, just remove its active state.
 		const active = subtabs.find(t => t.classList.contains('active'));
-		if (active && !vis(active)) active.classList.remove('active');
+		if (active && (!vis(active) || !enabled(active))) active.classList.remove('active');
 	} catch {}
 }
 
@@ -141,7 +143,7 @@ try {
 		try {
 			const pref = localStorage.getItem('additionalTools');
 			if (pref === '0') addToggle.checked = false;
-			else if (pref === '1') addToggle.checked = true;
+			else addToggle.checked = true;
 		} catch {}
 		addToggle.addEventListener('change', () => {
 			if (addToggle.checked) {
@@ -195,6 +197,7 @@ if (programButton) (programButton as any).onclick = async () => {
 		// Auto erase sequence (only if bootloader / esploader available)
 		if ((state as any).connectionMode === 'boot' && state.esploader) {
 			try { dbg('Auto erase before flash', 'info'); } catch {}
+			showBusy('Erasing flash…');
 			try {
 				// Switch to console tab so user sees progress (same logic as manual erase)
 				try {
@@ -211,6 +214,8 @@ if (programButton) (programButton as any).onclick = async () => {
 					(alertDiv as any).style.display = 'block';
 				}
 				return; // Abort flashing if erase fails
+			} finally {
+				hideBusy();
 			}
 		}
 		await performFlash(table, el.prebuiltSelect(), alertDiv, getTerminal());
@@ -323,6 +328,7 @@ function initDeviceModePanel() {
 							finally {
 								ov.style.display = 'none';
 								btn.disabled = false;
+								try { window.location.reload(); } catch {}
 							}
 						}, { once: true });
 					}
@@ -623,7 +629,7 @@ function initUpdatePanel() {
 						if (upStatus) { upStatus.textContent = 'Detect board in runtime first'; upStatus.className = 'upgrade-flag flag-pending'; }
 						return;
 					} else if (updateTab) {
-						updateTab.classList.remove('disabled');
+						updateTab.classList.add('disabled');
 					}
 					// Derive latest from manifest
 					const latest = deriveLatestForBoard(boardId);
@@ -875,7 +881,10 @@ function initUpdatePanel() {
 							ov.style.display = 'none';
 							await autoReconnectRuntime();
 						} catch {}
-						finally { btn.disabled = false; }
+						finally {
+							btn.disabled = false;
+							try { window.location.reload(); } catch {}
+						}
 					}, { once: true });
 				}
 			}
