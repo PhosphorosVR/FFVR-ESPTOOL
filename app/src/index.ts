@@ -747,6 +747,24 @@ function initUpdatePanel() {
 				const btn = document.getElementById('powerCycleConfirm') as HTMLButtonElement | null;
 				if (ov && btn) {
 					ov.style.display = 'flex';
+					// 10s safety countdown before enabling reconnect
+					try {
+						let remaining = 10;
+						const baseText = 'Yes, I power‑cycled, reconnect me';
+						btn.disabled = true;
+						btn.textContent = `${baseText} (${remaining})`;
+						const tick = () => {
+							remaining -= 1;
+							if (remaining <= 0) {
+								btn.disabled = false;
+								btn.textContent = baseText;
+							} else {
+								btn.textContent = `${baseText} (${remaining})`;
+								setTimeout(tick, 1000);
+							}
+						};
+						setTimeout(tick, 1000);
+					} catch {}
 					btn.addEventListener('click', async () => {
 						btn.disabled = true;
 						try {
@@ -831,6 +849,24 @@ function initUpdatePanel() {
 				const btn = document.getElementById('powerCycleConfirm') as HTMLButtonElement | null;
 				if (ov && btn) {
 					ov.style.display = 'flex';
+					// Apply same 10s countdown lockout
+					try {
+						let remaining = 10;
+						const baseText = 'Yes, I power‑cycled, reconnect me';
+						btn.disabled = true;
+						btn.textContent = `${baseText} (${remaining})`;
+						const tick = () => {
+							remaining -= 1;
+							if (remaining <= 0) {
+								btn.disabled = false;
+								btn.textContent = baseText;
+							} else {
+								btn.textContent = `${baseText} (${remaining})`;
+								setTimeout(tick, 1000);
+							}
+						};
+						setTimeout(tick, 1000);
+					} catch {}
 					btn.addEventListener('click', async () => {
 						btn.disabled = true;
 						try {
@@ -868,7 +904,11 @@ function initUpdatePanel() {
 initUpdatePanel();
 
 // Automatically attempt to reconnect in boot mode after user power-cycled when switching from runtime.
+// Temporary feature flag to disable auto reconnect logic for testing; set to true to re-enable.
+const AUTO_RECONNECT_ENABLED = false; // <<< toggle (false = disabled)
+
 async function autoReconnectRuntime() {
+	if (!AUTO_RECONNECT_ENABLED) return; // disabled
 	try {
 		const connectBtn = document.getElementById('connectButton') as HTMLButtonElement | null;
 		if (!connectBtn) return;
@@ -919,6 +959,7 @@ async function autoReconnectRuntime() {
 	} catch {}
 }
 async function autoReconnectBoot() {
+	if (!AUTO_RECONNECT_ENABLED) return; // disabled
 	try {
 		const connectBtn = document.getElementById('connectButton') as HTMLButtonElement | null;
 		if (!connectBtn) return;
